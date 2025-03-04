@@ -1,18 +1,15 @@
 import { MessageQueryParams, MessageQueryResult, SendMessageParams, UnifiedMessage } from '@/types/messages';
 import { TwilioService } from './services/twilio';
 import { MailjetService } from './services/mailjet';
-import { ConnexService } from './services/connexone';
 
 export class APIClient {
   private static instance: APIClient;
   private twilioService: TwilioService;
   private mailjetService: MailjetService;
-  private connexService: ConnexService;
 
   private constructor() {
     this.twilioService = TwilioService.getInstance();
     this.mailjetService = MailjetService.getInstance();
-    this.connexService = ConnexService.getInstance();
   }
 
   static getInstance(): APIClient {
@@ -47,12 +44,9 @@ export class APIClient {
   async getMessages(params: MessageQueryParams): Promise<MessageQueryResult> {
     try {
       // Get messages from all services
-      const [twilioMessages, mailjetMessages, connexResponse] = await Promise.all([
+      const [twilioMessages, mailjetMessages] = await Promise.all([
         this.twilioService.getMessages(params),
-        this.mailjetService.getMessages(params),
-        params.phoneNumber 
-          ? APIClient.get<{ interactions: UnifiedMessage[] }>(`/api/connex/interactions?phoneNumber=${encodeURIComponent(params.phoneNumber)}`)
-          : Promise.resolve({ interactions: [] })
+        this.mailjetService.getMessages(params)
       ]);
 
       // Create a Map to deduplicate messages by ID
@@ -61,7 +55,6 @@ export class APIClient {
       // Add messages from each service, ensuring no duplicates
       twilioMessages.forEach(msg => messageMap.set(msg.id, msg));
       mailjetMessages.forEach(msg => messageMap.set(msg.id, msg));
-      connexResponse?.interactions?.forEach(msg => messageMap.set(msg.id, msg));
 
       // Convert Map back to array and sort
       const messages = Array.from(messageMap.values()).sort(

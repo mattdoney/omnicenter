@@ -185,7 +185,7 @@ export default function Home() {
 
         <Timeline messages={filteredMessages} />
 
-        {identifier && (
+        {/* {identifier && (
           <div className="flex space-x-2">
             <input
               type="text"
@@ -208,7 +208,7 @@ export default function Home() {
               Send
             </button>
           </div>
-        )}
+        )} */}
       </div>
     </main>
   );

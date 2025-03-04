@@ -29,7 +29,7 @@ export class ConnexService {
         console.log('[Connex] Config loaded, client ID length:', config.CONNEX_CLIENT_ID.length);
         console.log('[Connex] Config loaded, client secret length:', config.CONNEX_CLIENT_SECRET.length);
         try {
-            const tokenUrl = "https://apigateway-hippovehicle-cxm.cnx1.cloud/oauth2/token";
+            const tokenUrl = "https://13.42.177.207/oauth2/token";
             console.log('[Connex] Requesting token from:', tokenUrl);
             const formData = new URLSearchParams();
             formData.append('grant_type', 'client_credentials');
@@ -40,7 +40,8 @@ export class ConnexService {
                 httpsAgent: new https.Agent({
                     keepAlive: true,
                     keepAliveMsecs: 1000,
-                    rejectUnauthorized: true
+                    rejectUnauthorized: true,
+                    servername: 'apigateway-hippovehicle-cxm.cnx1.cloud'
                 }),
                 validateStatus: (status) => status < 500
             });
@@ -48,6 +49,8 @@ export class ConnexService {
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Accept": "application/json",
+                    "Host": "apigateway-hippovehicle-cxm.cnx1.cloud",
+                    "Origin": "https://apigateway-hippovehicle-cxm.cnx1.cloud"
                 }
             });
             console.log('[Connex] Token response status:', response.status);
@@ -78,6 +81,13 @@ export class ConnexService {
                     response: error.response?.data,
                     status: error.response?.status,
                     headers: error.response?.headers,
+                    isAxiosError: true,
+                    config: {
+                        url: error.config?.url,
+                        method: error.config?.method,
+                        headers: error.config?.headers,
+                        timeout: error.config?.timeout
+                    }
                 });
             }
             throw error;
@@ -97,7 +107,7 @@ export class ConnexService {
             }
             console.log('[Connex] Got access token, length:', accessToken.length);
             const encodedNumber = encodeURIComponent(formattedNumber);
-            const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodedNumber}`;
+            const url = `https://13.42.177.207/interaction?filter[subject]=${encodedNumber}`;
             console.log('[Connex] Making request to:', url);
             // Create custom axios instance with longer timeout and keepAlive
             const instance = axios.create({
@@ -105,7 +115,8 @@ export class ConnexService {
                 httpsAgent: new https.Agent({
                     keepAlive: true,
                     keepAliveMsecs: 1000,
-                    rejectUnauthorized: true
+                    rejectUnauthorized: true,
+                    servername: 'hippovehicle-cxm-api.cnx1.cloud'
                 }),
                 validateStatus: (status) => status < 500
             });
@@ -114,6 +125,8 @@ export class ConnexService {
                 Authorization: `Bearer ${accessToken}`,
                 "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
                 "Accept": "application/json",
+                "Host": "hippovehicle-cxm-api.cnx1.cloud",
+                "Origin": "https://hippovehicle-cxm-api.cnx1.cloud"
             };
             console.log('[Connex] Request headers:', JSON.stringify(headers, null, 2));
             const response = await instance.get(url, { headers });
@@ -140,6 +153,13 @@ export class ConnexService {
                     response: error.response?.data,
                     status: error.response?.status,
                     headers: error.response?.headers,
+                    isAxiosError: true,
+                    config: {
+                        url: error.config?.url,
+                        method: error.config?.method,
+                        headers: error.config?.headers,
+                        timeout: error.config?.timeout
+                    }
                 });
             }
             return [];
@@ -193,7 +213,7 @@ export class ConnexService {
         try {
             const accessToken = await this.getAccessToken();
             console.log('[Connex] Got access token, length:', accessToken.length);
-            const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[customer_id=${customerId}]`;
+            const url = `https://13.42.177.207/interaction?filter[customer_id=${customerId}]`;
             console.log('[Connex] Making request to:', url);
             // Create custom axios instance with longer timeout and keepAlive
             const instance = axios.create({
@@ -201,7 +221,8 @@ export class ConnexService {
                 httpsAgent: new https.Agent({
                     keepAlive: true,
                     keepAliveMsecs: 1000,
-                    rejectUnauthorized: true
+                    rejectUnauthorized: true,
+                    servername: 'hippovehicle-cxm-api.cnx1.cloud'
                 }),
                 validateStatus: (status) => status < 500
             });
@@ -210,6 +231,8 @@ export class ConnexService {
                 Authorization: `Bearer ${accessToken}`,
                 "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
                 "Accept": "application/json",
+                "Host": "hippovehicle-cxm-api.cnx1.cloud",
+                "Origin": "https://hippovehicle-cxm-api.cnx1.cloud"
             };
             console.log('[Connex] Request headers:', JSON.stringify(headers, null, 2));
             const response = await instance.get(url, { headers });
@@ -240,6 +263,13 @@ export class ConnexService {
                     response: error.response?.data,
                     status: error.response?.status,
                     headers: error.response?.headers,
+                    isAxiosError: true,
+                    config: {
+                        url: error.config?.url,
+                        method: error.config?.method,
+                        headers: error.config?.headers,
+                        timeout: error.config?.timeout
+                    }
                 });
             }
             return [];
@@ -253,7 +283,7 @@ export class ConnexService {
         try {
             const accessToken = await this.getAccessToken();
             console.log('[Connex] Getting user info for ID:', userId);
-            const url = `https://hippovehicle-cxm-api.cnx1.cloud/user/${userId}`;
+            const url = `https://13.42.177.207/user/${userId}`;
             console.log('[Connex] Making request to:', url);
             // Create custom axios instance with longer timeout and keepAlive
             const instance = axios.create({
@@ -261,7 +291,8 @@ export class ConnexService {
                 httpsAgent: new https.Agent({
                     keepAlive: true,
                     keepAliveMsecs: 1000,
-                    rejectUnauthorized: true
+                    rejectUnauthorized: true,
+                    servername: 'hippovehicle-cxm-api.cnx1.cloud'
                 }),
                 validateStatus: (status) => status < 500
             });
@@ -270,6 +301,8 @@ export class ConnexService {
                 Authorization: `Bearer ${accessToken}`,
                 "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
                 "Accept": "application/json",
+                "Host": "hippovehicle-cxm-api.cnx1.cloud",
+                "Origin": "https://hippovehicle-cxm-api.cnx1.cloud"
             };
             console.log('[Connex] Request headers:', JSON.stringify(headers, null, 2));
             const response = await instance.get(url, { headers });
@@ -296,6 +329,13 @@ export class ConnexService {
                     response: error.response?.data,
                     status: error.response?.status,
                     headers: error.response?.headers,
+                    isAxiosError: true,
+                    config: {
+                        url: error.config?.url,
+                        method: error.config?.method,
+                        headers: error.config?.headers,
+                        timeout: error.config?.timeout
+                    }
                 });
             }
             return null;
