@@ -60,6 +60,9 @@ export class ConnexService {
       formData.append('client_id', config.CONNEX_CLIENT_ID || '');
       formData.append('client_secret', config.CONNEX_CLIENT_SECRET || '');
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+
       const response = await fetch(tokenUrl, {
         method: "POST",
         headers: {
@@ -67,7 +70,10 @@ export class ConnexService {
           "Accept": "application/json",
         },
         body: formData,
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       console.log('[Connex] Token response status:', response.status, response.statusText);
 
@@ -94,12 +100,10 @@ export class ConnexService {
   }
 
   async getInteractions(phoneNumber: string): Promise<ConnexInteraction[]> {
-    // Convert phone number to +44 format
-    const formattedNumber = phoneNumber.startsWith('0') 
-      ? `+44${phoneNumber.substring(1)}` 
-      : phoneNumber.startsWith('+44') 
-        ? phoneNumber 
-        : `+44${phoneNumber}`;
+    // Normalize the phone number format
+    let formattedNumber = phoneNumber.replace(/^0/, '44'); // Replace leading 0 with 44
+    formattedNumber = formattedNumber.replace(/^\+?44/, '44'); // Ensure consistent 44 prefix
+    formattedNumber = `+${formattedNumber}`; // Add the + prefix
 
     console.log(`[Connex] Fetching interactions for phone number: ${formattedNumber}`);
     try {
@@ -110,6 +114,9 @@ export class ConnexService {
       const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodedNumber}`;
       console.log('[Connex] Making request to:', url);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+
       const response = await fetch(url, {
         method: "GET",
         headers: {
@@ -117,7 +124,10 @@ export class ConnexService {
           "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
           "Accept": "application/json",
         },
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       console.log('[Connex] Interactions response status:', response.status, response.statusText);
       const responseText = await response.text();
@@ -203,6 +213,9 @@ export class ConnexService {
       const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[customer_id=${customerId}]`;
       console.log('[Connex] Making request to:', url);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+
       const response = await fetch(url, {
         method: "GET",
         headers: {
@@ -210,7 +223,10 @@ export class ConnexService {
           "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
           "Accept": "application/json",
         },
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       console.log('[Connex] Interactions response status:', response.status, response.statusText);
       const responseText = await response.text();
@@ -252,6 +268,9 @@ export class ConnexService {
       const url = `https://hippovehicle-cxm-api.cnx1.cloud/user/${userId}`;
       console.log('[Connex] Making request to:', url);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+
       const response = await fetch(url, {
         method: "GET",
         headers: {
@@ -259,7 +278,10 @@ export class ConnexService {
           "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
           "Accept": "application/json",
         },
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         if (response.status === 404) {
