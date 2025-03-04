@@ -48,8 +48,16 @@ export class ConnexService {
     }
 
     const config = getEnvConfig();
-    console.log('[Connex] Config loaded, client ID length:', config.CONNEX_CLIENT_ID?.length);
-    console.log('[Connex] Config loaded, client secret length:', config.CONNEX_CLIENT_SECRET?.length);
+    if (!config.CONNEX_CLIENT_ID || !config.CONNEX_CLIENT_SECRET) {
+      console.error('[Connex] Missing client credentials:', {
+        hasClientId: !!config.CONNEX_CLIENT_ID,
+        hasClientSecret: !!config.CONNEX_CLIENT_SECRET
+      });
+      throw new Error('Missing Connex client credentials');
+    }
+    
+    console.log('[Connex] Config loaded, client ID length:', config.CONNEX_CLIENT_ID.length);
+    console.log('[Connex] Config loaded, client secret length:', config.CONNEX_CLIENT_SECRET.length);
 
     try {
       const tokenUrl = "https://apigateway-hippovehicle-cxm.cnx1.cloud/oauth2/token";
@@ -57,11 +65,8 @@ export class ConnexService {
       
       const formData = new URLSearchParams();
       formData.append('grant_type', 'client_credentials');
-      formData.append('client_id', config.CONNEX_CLIENT_ID || '');
-      formData.append('client_secret', config.CONNEX_CLIENT_SECRET || '');
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+      formData.append('client_id', config.CONNEX_CLIENT_ID);
+      formData.append('client_secret', config.CONNEX_CLIENT_SECRET);
 
       const response = await fetch(tokenUrl, {
         method: "POST",
@@ -70,31 +75,49 @@ export class ConnexService {
           "Accept": "application/json",
         },
         body: formData,
-        signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
 
       console.log('[Connex] Token response status:', response.status, response.statusText);
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error('[Connex] Token error response:', errorText);
-        throw new Error(`Failed to fetch access token: ${response.statusText}`);
+        throw new Error(`Failed to fetch access token: ${response.statusText} (${response.status})`);
       }
 
-      const data = await response.json();
-      console.log('[Connex] Token received, expires in:', data.expires_in, 'seconds');
-      
-      // Cache the token with expiration
-      this.tokenCache = {
-        token: data.access_token,
-        expiresAt: Date.now() + (data.expires_in * 1000), // expires_in is in seconds
-      };
+      const responseText = await response.text();
+      console.log('[Connex] Token response body:', responseText);
 
-      return data.access_token;
+      try {
+        const data = JSON.parse(responseText);
+        if (!data.access_token) {
+          console.error('[Connex] No access token in response:', data);
+          throw new Error('No access token in response');
+        }
+
+        console.log('[Connex] Token received, expires in:', data.expires_in, 'seconds');
+        
+        // Cache the token with expiration
+        this.tokenCache = {
+          token: data.access_token,
+          expiresAt: Date.now() + (data.expires_in * 1000), // expires_in is in seconds
+        };
+
+        return data.access_token;
+      } catch (parseError) {
+        console.error('[Connex] Error parsing token response:', parseError);
+        console.log('[Connex] Invalid token response:', responseText);
+        throw parseError;
+      }
     } catch (error) {
       console.error("[Connex] Error fetching access token:", error);
+      if (error instanceof Error) {
+        console.error('[Connex] Token error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
+      }
       throw error;
     }
   }
@@ -106,16 +129,18 @@ export class ConnexService {
     formattedNumber = `+${formattedNumber}`; // Add the + prefix
 
     console.log(`[Connex] Fetching interactions for phone number: ${formattedNumber}`);
+    
     try {
       const accessToken = await this.getAccessToken();
+      if (!accessToken) {
+        console.error('[Connex] Failed to get access token');
+        return [];
+      }
       console.log('[Connex] Got access token, length:', accessToken.length);
 
       const encodedNumber = encodeURIComponent(formattedNumber);
       const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodedNumber}`;
       console.log('[Connex] Making request to:', url);
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
       const response = await fetch(url, {
         method: "GET",
@@ -124,31 +149,46 @@ export class ConnexService {
           "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
           "Accept": "application/json",
         },
-        signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
       console.log('[Connex] Interactions response status:', response.status, response.statusText);
-      const responseText = await response.text();
-      console.log('[Connex] Raw response:', responseText);
-
+      
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Connex] Error response:', errorText);
         if (response.status === 404) {
           console.log('[Connex] No interactions found for phone number:', formattedNumber);
           return [];
         }
-        console.error('[Connex] Error response:', responseText);
-        throw new Error(`Failed to fetch interactions: ${response.statusText}`);
+        throw new Error(`Failed to fetch interactions: ${response.statusText} (${response.status})`);
       }
 
-      const data: ConnexResponse = JSON.parse(responseText);
-      console.log(`[Connex] Found ${data.data?.length || 0} interactions for phone number:`, formattedNumber);
-      console.log('[Connex] Full response data:', JSON.stringify(data, null, 2));
+      const responseText = await response.text();
+      console.log('[Connex] Raw response:', responseText);
 
-      return data.data || [];
+      if (!responseText) {
+        console.log('[Connex] Empty response received');
+        return [];
+      }
+
+      try {
+        const data: ConnexResponse = JSON.parse(responseText);
+        console.log(`[Connex] Found ${data.data?.length || 0} interactions for phone number:`, formattedNumber);
+        return data.data || [];
+      } catch (parseError) {
+        console.error('[Connex] Error parsing JSON response:', parseError);
+        console.log('[Connex] Invalid JSON response:', responseText);
+        return [];
+      }
     } catch (error) {
       console.error(`[Connex] Error fetching interactions for phone number ${phoneNumber}:`, error);
+      if (error instanceof Error) {
+        console.error('[Connex] Error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
+      }
       return [];
     }
   }
