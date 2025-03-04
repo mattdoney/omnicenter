@@ -30,18 +30,17 @@ export class ConnexService {
     expiresAt: number;
   } | null = null;
   private userDisplayNameCache: Map<string, string> = new Map();
-  private readonly API_TIMEOUT = 8000; // 8 seconds timeout
-  private readonly TOKEN_TIMEOUT = 8000; // 8 seconds for token requests
-  private readonly INTERACTION_TIMEOUT = 8000; // 8 seconds for interaction requests
+  private API_TIMEOUT = 8000; // 8 seconds timeout
+  private TOKEN_TIMEOUT: number;
+  private INTERACTION_TIMEOUT: number;
   private readonly BASE_URL = 'https://hippovehicle-cxm-api.cnx1.cloud';
   private readonly AUTH_URL = 'https://apigateway-hippovehicle-cxm.cnx1.cloud';
 
   private constructor() {
     // Initialize timeouts based on environment
-    if (process.env.VERCEL_ENV === 'production') {
-      this.TOKEN_TIMEOUT = 12000; // 12 seconds for token in production
-      this.INTERACTION_TIMEOUT = 12000; // 12 seconds for interactions in production
-    }
+    this.TOKEN_TIMEOUT = process.env.VERCEL_ENV === 'production' ? 12000 : 8000;
+    this.INTERACTION_TIMEOUT = process.env.VERCEL_ENV === 'production' ? 12000 : 8000;
+    console.log(`[Connex] Initializing with timeouts - Token: ${this.TOKEN_TIMEOUT}ms, Interaction: ${this.INTERACTION_TIMEOUT}ms`);
   }
 
   static getInstance(): ConnexService {
