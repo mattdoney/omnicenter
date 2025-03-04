@@ -1,4 +1,6 @@
 import { getEnvConfig } from '@/config/env';
+import axios from 'axios';
+import https from 'https';
 export class ConnexService {
     static instance;
     tokenCache = null;
@@ -33,49 +35,49 @@ export class ConnexService {
             formData.append('grant_type', 'client_credentials');
             formData.append('client_id', config.CONNEX_CLIENT_ID);
             formData.append('client_secret', config.CONNEX_CLIENT_SECRET);
-            const response = await fetch(tokenUrl, {
-                method: "POST",
+            const instance = axios.create({
+                timeout: 30000,
+                httpsAgent: new https.Agent({
+                    keepAlive: true,
+                    keepAliveMsecs: 1000,
+                    rejectUnauthorized: true
+                }),
+                validateStatus: (status) => status < 500
+            });
+            const response = await instance.post(tokenUrl, formData.toString(), {
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Accept": "application/json",
-                },
-                body: formData,
-            });
-            console.log('[Connex] Token response status:', response.status, response.statusText);
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('[Connex] Token error response:', errorText);
-                throw new Error(`Failed to fetch access token: ${response.statusText} (${response.status})`);
-            }
-            const responseText = await response.text();
-            console.log('[Connex] Token response body:', responseText);
-            try {
-                const data = JSON.parse(responseText);
-                if (!data.access_token) {
-                    console.error('[Connex] No access token in response:', data);
-                    throw new Error('No access token in response');
                 }
-                console.log('[Connex] Token received, expires in:', data.expires_in, 'seconds');
-                // Cache the token with expiration
-                this.tokenCache = {
-                    token: data.access_token,
-                    expiresAt: Date.now() + (data.expires_in * 1000), // expires_in is in seconds
-                };
-                return data.access_token;
+            });
+            console.log('[Connex] Token response status:', response.status);
+            console.log('[Connex] Response headers:', JSON.stringify(response.headers, null, 2));
+            if (!response.data) {
+                console.log('[Connex] Empty response received');
+                throw new Error('Empty response received');
             }
-            catch (parseError) {
-                console.error('[Connex] Error parsing token response:', parseError);
-                console.log('[Connex] Invalid token response:', responseText);
-                throw parseError;
+            const data = response.data;
+            if (!data.access_token) {
+                console.error('[Connex] No access token in response:', data);
+                throw new Error('No access token in response');
             }
+            console.log('[Connex] Token received, expires in:', data.expires_in, 'seconds');
+            // Cache the token with expiration
+            this.tokenCache = {
+                token: data.access_token,
+                expiresAt: Date.now() + (data.expires_in * 1000), // expires_in is in seconds
+            };
+            return data.access_token;
         }
         catch (error) {
             console.error("[Connex] Error fetching access token:", error);
-            if (error instanceof Error) {
-                console.error('[Connex] Token error details:', {
-                    name: error.name,
+            if (axios.isAxiosError(error)) {
+                console.error('[Connex] Axios error details:', {
+                    code: error.code,
                     message: error.message,
-                    stack: error.stack
+                    response: error.response?.data,
+                    status: error.response?.status,
+                    headers: error.response?.headers,
                 });
             }
             throw error;
@@ -97,49 +99,47 @@ export class ConnexService {
             const encodedNumber = encodeURIComponent(formattedNumber);
             const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodedNumber}`;
             console.log('[Connex] Making request to:', url);
+            // Create custom axios instance with longer timeout and keepAlive
+            const instance = axios.create({
+                timeout: 30000,
+                httpsAgent: new https.Agent({
+                    keepAlive: true,
+                    keepAliveMsecs: 1000,
+                    rejectUnauthorized: true
+                }),
+                validateStatus: (status) => status < 500
+            });
             // Log request details
             const headers = {
                 Authorization: `Bearer ${accessToken}`,
                 "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
                 "Accept": "application/json",
-                "Connection": "keep-alive"
             };
             console.log('[Connex] Request headers:', JSON.stringify(headers, null, 2));
-            const response = await fetch(url, {
-                method: "GET",
-                headers,
-                next: {
-                    revalidate: 0
-                }
-            });
-            console.log('[Connex] Interactions response status:', response.status, response.statusText);
-            console.log('[Connex] Response headers:', JSON.stringify(Object.fromEntries([...response.headers.entries()]), null, 2));
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('[Connex] Error response:', errorText);
-                if (response.status === 404) {
-                    console.log('[Connex] No interactions found for phone number:', formattedNumber);
-                    return [];
-                }
-                throw new Error(`Failed to fetch interactions: ${response.statusText} (${response.status})`);
+            const response = await instance.get(url, { headers });
+            console.log('[Connex] Response status:', response.status);
+            console.log('[Connex] Response headers:', JSON.stringify(response.headers, null, 2));
+            if (response.status === 404) {
+                console.log('[Connex] No interactions found for phone number:', formattedNumber);
+                return [];
             }
-            const responseText = await response.text();
-            console.log('[Connex] Raw response:', responseText);
-            if (!responseText) {
+            if (!response.data) {
                 console.log('[Connex] Empty response received');
                 return [];
             }
-            const data = JSON.parse(responseText);
+            const data = response.data;
             console.log(`[Connex] Found ${data.data?.length || 0} interactions for phone number:`, formattedNumber);
             return data.data || [];
         }
         catch (error) {
             console.error(`[Connex] Error fetching interactions for phone number ${phoneNumber}:`, error);
-            if (error instanceof Error) {
-                console.error('[Connex] Error details:', {
-                    name: error.name,
+            if (axios.isAxiosError(error)) {
+                console.error('[Connex] Axios error details:', {
+                    code: error.code,
                     message: error.message,
-                    stack: error.stack
+                    response: error.response?.data,
+                    status: error.response?.status,
+                    headers: error.response?.headers,
                 });
             }
             return [];
@@ -195,6 +195,16 @@ export class ConnexService {
             console.log('[Connex] Got access token, length:', accessToken.length);
             const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[customer_id=${customerId}]`;
             console.log('[Connex] Making request to:', url);
+            // Create custom axios instance with longer timeout and keepAlive
+            const instance = axios.create({
+                timeout: 30000,
+                httpsAgent: new https.Agent({
+                    keepAlive: true,
+                    keepAliveMsecs: 1000,
+                    rejectUnauthorized: true
+                }),
+                validateStatus: (status) => status < 500
+            });
             // Log request details
             const headers = {
                 Authorization: `Bearer ${accessToken}`,
@@ -202,24 +212,18 @@ export class ConnexService {
                 "Accept": "application/json",
             };
             console.log('[Connex] Request headers:', JSON.stringify(headers, null, 2));
-            const response = await fetch(url, {
-                method: "GET",
-                headers,
-            });
-            console.log('[Connex] Interactions response status:', response.status, response.statusText);
-            console.log('[Connex] Response headers:', JSON.stringify(Object.fromEntries([...response.headers.entries()]), null, 2));
-            if (!response.ok) {
-                if (response.status === 404) {
-                    console.log('[Connex] No interactions found for customer:', customerId);
-                    return [];
-                }
-                const errorText = await response.text();
-                console.error('[Connex] Error response:', errorText);
-                throw new Error(`Failed to fetch interactions: ${response.statusText}`);
+            const response = await instance.get(url, { headers });
+            console.log('[Connex] Response status:', response.status);
+            console.log('[Connex] Response headers:', JSON.stringify(response.headers, null, 2));
+            if (response.status === 404) {
+                console.log('[Connex] No interactions found for customer:', customerId);
+                return [];
             }
-            const responseText = await response.text();
-            console.log('[Connex] Raw response:', responseText);
-            const data = JSON.parse(responseText);
+            if (!response.data) {
+                console.log('[Connex] Empty response received');
+                return [];
+            }
+            const data = response.data;
             console.log(`[Connex] Found ${data.data?.length || 0} interactions for customer:`, customerId);
             console.log('[Connex] Full response data:', JSON.stringify(data, null, 2));
             if (data.data?.length > 0) {
@@ -229,6 +233,15 @@ export class ConnexService {
         }
         catch (error) {
             console.error(`[Connex] Error fetching interactions for customer ${customerId}:`, error);
+            if (axios.isAxiosError(error)) {
+                console.error('[Connex] Axios error details:', {
+                    code: error.code,
+                    message: error.message,
+                    response: error.response?.data,
+                    status: error.response?.status,
+                    headers: error.response?.headers,
+                });
+            }
             return [];
         }
     }
@@ -242,6 +255,16 @@ export class ConnexService {
             console.log('[Connex] Getting user info for ID:', userId);
             const url = `https://hippovehicle-cxm-api.cnx1.cloud/user/${userId}`;
             console.log('[Connex] Making request to:', url);
+            // Create custom axios instance with longer timeout and keepAlive
+            const instance = axios.create({
+                timeout: 30000,
+                httpsAgent: new https.Agent({
+                    keepAlive: true,
+                    keepAliveMsecs: 1000,
+                    rejectUnauthorized: true
+                }),
+                validateStatus: (status) => status < 500
+            });
             // Log request details
             const headers = {
                 Authorization: `Bearer ${accessToken}`,
@@ -249,25 +272,32 @@ export class ConnexService {
                 "Accept": "application/json",
             };
             console.log('[Connex] Request headers:', JSON.stringify(headers, null, 2));
-            const response = await fetch(url, {
-                method: "GET",
-                headers,
-            });
-            console.log('[Connex] User response status:', response.status, response.statusText);
-            console.log('[Connex] Response headers:', JSON.stringify(Object.fromEntries([...response.headers.entries()]), null, 2));
-            if (!response.ok) {
-                if (response.status === 404) {
-                    console.log('[Connex] No user found for ID:', userId);
-                    return null;
-                }
-                throw new Error(`Failed to fetch user: ${response.statusText}`);
+            const response = await instance.get(url, { headers });
+            console.log('[Connex] Response status:', response.status);
+            console.log('[Connex] Response headers:', JSON.stringify(response.headers, null, 2));
+            if (response.status === 404) {
+                console.log('[Connex] No user found for ID:', userId);
+                return null;
             }
-            const data = await response.json();
+            if (!response.data) {
+                console.log('[Connex] Empty response received');
+                return null;
+            }
+            const data = response.data;
             console.log('[Connex] Found user:', data);
             return data.data.display_name;
         }
         catch (error) {
             console.error(`[Connex] Error fetching user for ID ${userId}:`, error);
+            if (axios.isAxiosError(error)) {
+                console.error('[Connex] Axios error details:', {
+                    code: error.code,
+                    message: error.message,
+                    response: error.response?.data,
+                    status: error.response?.status,
+                    headers: error.response?.headers,
+                });
+            }
             return null;
         }
     }
