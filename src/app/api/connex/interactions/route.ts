@@ -7,7 +7,7 @@ interface BaseInteraction {
   timestamp: Date;
   platform: 'connex';
   type: 'call' | 'sms' | 'email';
-  direction: string;
+  direction: 'inbound' | 'outbound';
   body: string;
   status: string;
 }
@@ -21,11 +21,8 @@ interface CallInteraction extends BaseInteraction {
 
 type FormattedInteraction = BaseInteraction | CallInteraction;
 
-export const maxDuration = 60; // Increase max duration to 60 seconds for production
-
-// Use nodejs runtime for better stability with external APIs
+// Force Node.js runtime for better API compatibility
 export const runtime = 'nodejs';
-export const fetchCache = 'force-no-store';
 
 export async function GET(request: Request) {
   const startTime = Date.now();
@@ -45,28 +42,11 @@ export async function GET(request: Request) {
     console.log(`[Connex API] Starting request for phone number ${phoneNumber}`);
     const connexService = ConnexService.getInstance();
     
-    const timeoutPromise = new Promise<ConnexInteraction[]>((_, reject) => {
-      setTimeout(() => reject(new Error('Operation timeout')), 55000);
-    });
-
-    const interactionsPromise = connexService.getInteractions(phoneNumber);
-    
     try {
-      const interactions = await Promise.any([
-        interactionsPromise,
-        timeoutPromise
-      ]);
+      const interactions = await connexService.getInteractions(phoneNumber);
       
-      const processingTimeout = new Promise<FormattedInteraction[]>((_, reject) => 
-        setTimeout(() => reject(new Error('Processing timeout')), 55000)
-      );
-
-      const processedInteractions = Promise.all(
+      const formattedInteractions = await Promise.all(
         interactions.map(async (interaction: ConnexInteraction) => {
-          if (Date.now() - startTime > 50000) { // Leave 10s buffer
-            throw new Error('Processing time limit approaching');
-          }
-
           const type = interaction.type_name === 'voice' ? 'call' : 
                       interaction.type_name === 'sms' ? 'sms' : 'email';
           
@@ -81,7 +61,7 @@ export async function GET(request: Request) {
             status: interaction.status_name,
           };
 
-          if (type === 'call' && interaction.user_id && (Date.now() - startTime < 45000)) {
+          if (type === 'call' && interaction.user_id) {
             const duration = interaction.end_time 
               ? Math.round((new Date(interaction.end_time).getTime() - new Date(interaction.start_time).getTime()) / 1000)
               : 0;
@@ -109,11 +89,6 @@ export async function GET(request: Request) {
           return baseMessage;
         })
       );
-
-      const formattedInteractions = await Promise.any([
-        processedInteractions,
-        processingTimeout
-      ]);
 
       const processingTime = Date.now() - startTime;
       console.log(`[Connex API] Request completed in ${processingTime}ms`);

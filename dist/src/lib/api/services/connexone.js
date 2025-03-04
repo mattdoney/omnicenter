@@ -154,20 +154,26 @@ export class ConnexService {
         return '+44' + cleaned;
     }
     async makeRequest(url, options, timeout) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
         try {
             console.log(`[Connex] Making request to ${url} with ${timeout}ms timeout`);
             const startTime = Date.now();
             const response = await fetch(url, {
                 ...options,
-                signal: controller.signal
+                headers: {
+                    ...options.headers,
+                    "Accept": "application/json",
+                    "Cache-Control": "no-cache",
+                },
+                next: {
+                    revalidate: 0
+                }
             });
             console.log(`[Connex] Request completed in ${Date.now() - startTime}ms with status ${response.status}`);
             return response;
         }
-        finally {
-            clearTimeout(timeoutId);
+        catch (error) {
+            console.error('[Connex] Request failed:', error);
+            throw error;
         }
     }
     async getInteractions(phoneNumber) {
@@ -184,9 +190,6 @@ export class ConnexService {
                     headers: {
                         "Authorization": `Bearer ${accessToken}`,
                         "X-Authorization": "Basic MjA2MzpNYW5jaGVzdGVyMSM=",
-                        "Accept": "application/json",
-                        "Connection": "keep-alive",
-                        "Cache-Control": "no-cache"
                     }
                 }, this.INTERACTION_TIMEOUT);
                 // If phone search fails, try subject search as fallback
@@ -198,9 +201,6 @@ export class ConnexService {
                         headers: {
                             "Authorization": `Bearer ${accessToken}`,
                             "X-Authorization": "Basic MjA2MzpNYW5jaGVzdGVyMSM=",
-                            "Accept": "application/json",
-                            "Connection": "keep-alive",
-                            "Cache-Control": "no-cache"
                         }
                     }, this.INTERACTION_TIMEOUT);
                     if (!subjectResponse.ok) {
