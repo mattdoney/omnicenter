@@ -149,6 +149,7 @@ export class ConnexService {
           "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
           "Accept": "application/json",
         },
+        signal: AbortSignal.timeout(5000)
       });
 
       console.log('[Connex] Interactions response status:', response.status, response.statusText);
@@ -181,6 +182,10 @@ export class ConnexService {
         return [];
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'TimeoutError') {
+        console.error('[Connex] Request timed out after 5 seconds');
+        return [];
+      }
       console.error(`[Connex] Error fetching interactions for phone number ${phoneNumber}:`, error);
       if (error instanceof Error) {
         console.error('[Connex] Error details:', {
