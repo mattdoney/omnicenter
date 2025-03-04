@@ -1,5 +1,4 @@
 import { UnifiedMessage, MessageQueryParams } from '@/types/messages';
-import { getEnvConfig } from '@/config/env';
 
 export class TwilioService {
   private static instance: TwilioService;

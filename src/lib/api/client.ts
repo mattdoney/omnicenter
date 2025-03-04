@@ -2,7 +2,6 @@ import { MessageQueryParams, MessageQueryResult, SendMessageParams, UnifiedMessa
 import { TwilioService } from './services/twilio';
 import { MailjetService } from './services/mailjet';
 import { ConnexService } from './services/connexone';
-import { WebSocketServer } from '../websocket/server';
 
 export class APIClient {
   private static instance: APIClient;
@@ -31,7 +30,7 @@ export class APIClient {
     return response.json();
   }
 
-  static async post<T>(url: string, data: any): Promise<T> {
+  static async post<T>(url: string, data: Record<string, unknown>): Promise<T> {
     const response = await fetch(url, {
       method: 'POST',
       headers: {

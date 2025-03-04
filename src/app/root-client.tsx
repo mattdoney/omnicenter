@@ -1,6 +1,6 @@
 'use client';
 
-import { Nunito, Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "./providers";
 
 

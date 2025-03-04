@@ -1,5 +1,3 @@
-import { getEnvConfig } from '@/config/env';
-
 interface SegmentExternalId {
   id: string;
   type: string;

@@ -110,7 +110,7 @@ export default function Timeline({ messages = [], loading = false }: TimelinePro
 
   return (
     <div className="flex flex-col space-y-6 p-4">
-      {groupedMessages.map((group, groupIndex) => (
+      {groupedMessages.map((group) => (
         <div key={group.date} className="space-y-4">
           <div className="flex items-center gap-4">
             <div className="flex-grow h-px bg-gray-200"></div>

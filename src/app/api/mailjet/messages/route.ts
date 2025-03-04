@@ -1,11 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getEnvConfig } from '@/config/env';
 
-interface MailjetContact {
-  ContactID: number;
-  ID: number;
-}
-
 interface MailjetMessage {
   ID: number;
   ArrivedAt: string;
