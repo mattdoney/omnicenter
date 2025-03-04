@@ -10,7 +10,6 @@ export default function Home() {
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [newMessage, setNewMessage] = useState('');
   const [selectedType, setSelectedType] = useState<'all' | 'sms' | 'email' | 'call'>('all');
 
   const filteredMessages = useMemo(() => {
@@ -84,26 +83,6 @@ export default function Home() {
       return;
     }
     await loadMessages();
-  };
-
-  const handleSend = async () => {
-    if (!identifier.trim() || !newMessage.trim()) return;
-
-    try {
-      const apiClient = APIClient.getInstance();
-      await apiClient.sendMessage({
-        emailAddress: identifier.includes('@') ? identifier : undefined,
-        phoneNumber: identifier.includes('@') ? undefined : identifier,
-        body: newMessage,
-        subject: 'New Message',
-      });
-
-      setNewMessage('');
-      loadMessages();
-    } catch (err) {
-      console.error('Error sending message:', err);
-      setError('Failed to send message. Please try again.');
-    }
   };
 
   return (
@@ -184,31 +163,6 @@ export default function Home() {
         )}
 
         <Timeline messages={filteredMessages} />
-
-        {/* {identifier && (
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-1 p-2 border rounded-lg"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!newMessage.trim()}
-              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed"
-            >
-              Send
-            </button>
-          </div>
-        )} */}
       </div>
     </main>
   );
