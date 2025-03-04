@@ -7,6 +7,9 @@ export const maxDuration = 30;
 
 export async function GET(request: Request) {
   console.log('[Connex] Starting GET request for interactions');
+  console.log('[Connex] Request headers:', request.headers);
+  console.log('[Connex] Request method:', request.method);
+  console.log('[Connex] Request URL:', request.url);
   try {
     const { searchParams } = new URL(request.url);
     const phoneNumber = searchParams.get('phoneNumber');
@@ -19,70 +22,50 @@ export async function GET(request: Request) {
       });
     }
 
-    // Set up timeout for the entire request
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-      console.log('[Connex] Aborting request due to overall timeout');
-    }, 25000); // 25 second timeout
-
-    try {
-      const connexService = ConnexService.getInstance();
-      const interactions = await connexService.getInteractionsForPhoneNumber(phoneNumber);
+    const connexService = ConnexService.getInstance();
+    const interactions = await connexService.getInteractionsForPhoneNumber(phoneNumber);
+    
+    // Format interactions
+    const formattedInteractions = await Promise.all(interactions.map(async interaction => {
+      const type = interaction.type_name === 'voice' ? 'call' : interaction.type_name === 'sms' ? 'sms' : 'email';
+      const body = interaction.subject || `${type.toUpperCase()} Interaction`;
       
-      // Format interactions
-      const formattedInteractions = await Promise.all(interactions.map(async interaction => {
-        const type = interaction.type_name === 'voice' ? 'call' : interaction.type_name === 'sms' ? 'sms' : 'email';
-        const body = interaction.subject || `${type.toUpperCase()} Interaction`;
-        
-        const baseMessage = {
-          id: `connex_${interaction.id}`,
-          timestamp: new Date(interaction.start_time),
-          platform: 'connex',
-          type,
-          direction: interaction.direction === 'none' ? 'outbound' : interaction.direction,
-          body,
-          status: interaction.status_name,
+      const baseMessage = {
+        id: `connex_${interaction.id}`,
+        timestamp: new Date(interaction.start_time),
+        platform: 'connex',
+        type,
+        direction: interaction.direction === 'none' ? 'outbound' : interaction.direction,
+        body,
+        status: interaction.status_name,
+      };
+
+      // Add type-specific fields
+      if (type === 'call') {
+        const duration = interaction.end_time 
+          ? Math.round((new Date(interaction.end_time).getTime() - new Date(interaction.start_time).getTime()) / 1000)
+          : 0;
+
+        const userDisplayName = await connexService.getUserDisplayName(interaction.user_id);
+        console.log(`[Connex] Call interaction ${interaction.id} has user_id:`, interaction.user_id);
+
+        return {
+          ...baseMessage,
+          type: 'call' as const,
+          phoneNumber: '', // We'll need to get this from another endpoint
+          duration,
+          userDisplayName,
         };
-
-        // Add type-specific fields
-        if (type === 'call') {
-          const duration = interaction.end_time 
-            ? Math.round((new Date(interaction.end_time).getTime() - new Date(interaction.start_time).getTime()) / 1000)
-            : 0;
-
-          const userDisplayName = await connexService.getUserDisplayName(interaction.user_id);
-          console.log(`[Connex] Call interaction ${interaction.id} has user_id:`, interaction.user_id);
-
-          return {
-            ...baseMessage,
-            type: 'call' as const,
-            phoneNumber: '', // We'll need to get this from another endpoint
-            duration,
-            userDisplayName,
-          };
-        }
-
-        return baseMessage;
-      }));
-
-      console.log(`[Connex] Returning ${formattedInteractions.length} formatted interactions`);
-      return NextResponse.json({
-        interactions: formattedInteractions,
-        total: formattedInteractions.length,
-      });
-    } catch (innerError) {
-      if (controller.signal.aborted) {
-        console.error('[Connex] Request aborted due to timeout');
-        return NextResponse.json(
-          { error: 'Request timed out' },
-          { status: 504 }
-        );
       }
-      throw innerError;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+
+      return baseMessage;
+    }));
+
+    console.log(`[Connex] Returning ${formattedInteractions.length} formatted interactions`);
+    return NextResponse.json({
+      interactions: formattedInteractions,
+      total: formattedInteractions.length,
+    });
   } catch (error) {
     console.error('[Connex] Error in GET handler:', error);
     if (error instanceof Error) {

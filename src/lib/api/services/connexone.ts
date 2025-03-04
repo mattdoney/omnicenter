@@ -142,61 +142,47 @@ export class ConnexService {
       const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodedNumber}`;
       console.log('[Connex] Making request to:', url);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-        console.log('[Connex] Aborting request due to timeout');
-      }, 10000);
+      // Log request details
+      const headers = {
+        Authorization: `Bearer ${accessToken}`,
+        "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
+        "Accept": "application/json",
+        "Connection": "keep-alive"
+      };
+      console.log('[Connex] Request headers:', JSON.stringify(headers, null, 2));
 
-      try {
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
-            "Accept": "application/json",
-            "Connection": "keep-alive"
-          },
-          signal: controller.signal,
-          next: {
-            revalidate: 0
-          }
-        });
-
-        clearTimeout(timeoutId);
-
-        console.log('[Connex] Interactions response status:', response.status, response.statusText);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('[Connex] Error response:', errorText);
-          if (response.status === 404) {
-            console.log('[Connex] No interactions found for phone number:', formattedNumber);
-            return [];
-          }
-          throw new Error(`Failed to fetch interactions: ${response.statusText} (${response.status})`);
+      const response = await fetch(url, {
+        method: "GET",
+        headers,
+        next: {
+          revalidate: 0
         }
+      });
 
-        const responseText = await response.text();
-        console.log('[Connex] Raw response:', responseText);
-
-        if (!responseText) {
-          console.log('[Connex] Empty response received');
+      console.log('[Connex] Interactions response status:', response.status, response.statusText);
+      console.log('[Connex] Response headers:', JSON.stringify(Object.fromEntries([...response.headers.entries()]), null, 2));
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Connex] Error response:', errorText);
+        if (response.status === 404) {
+          console.log('[Connex] No interactions found for phone number:', formattedNumber);
           return [];
         }
-
-        const data: ConnexResponse = JSON.parse(responseText);
-        console.log(`[Connex] Found ${data.data?.length || 0} interactions for phone number:`, formattedNumber);
-        return data.data || [];
-      } catch (fetchError) {
-        if (controller.signal.aborted) {
-          console.error('[Connex] Request aborted due to timeout');
-          return [];
-        }
-        throw fetchError;
-      } finally {
-        clearTimeout(timeoutId);
+        throw new Error(`Failed to fetch interactions: ${response.statusText} (${response.status})`);
       }
+
+      const responseText = await response.text();
+      console.log('[Connex] Raw response:', responseText);
+
+      if (!responseText) {
+        console.log('[Connex] Empty response received');
+        return [];
+      }
+
+      const data: ConnexResponse = JSON.parse(responseText);
+      console.log(`[Connex] Found ${data.data?.length || 0} interactions for phone number:`, formattedNumber);
+      return data.data || [];
     } catch (error) {
       console.error(`[Connex] Error fetching interactions for phone number ${phoneNumber}:`, error);
       if (error instanceof Error) {
@@ -270,33 +256,34 @@ export class ConnexService {
       const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[customer_id=${customerId}]`;
       console.log('[Connex] Making request to:', url);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+      // Log request details
+      const headers = {
+        Authorization: `Bearer ${accessToken}`,
+        "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
+        "Accept": "application/json",
+      };
+      console.log('[Connex] Request headers:', JSON.stringify(headers, null, 2));
 
       const response = await fetch(url, {
         method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
-          "Accept": "application/json",
-        },
-        signal: controller.signal,
+        headers,
       });
 
-      clearTimeout(timeoutId);
-
       console.log('[Connex] Interactions response status:', response.status, response.statusText);
-      const responseText = await response.text();
-      console.log('[Connex] Raw response:', responseText);
-
+      console.log('[Connex] Response headers:', JSON.stringify(Object.fromEntries([...response.headers.entries()]), null, 2));
+      
       if (!response.ok) {
         if (response.status === 404) {
           console.log('[Connex] No interactions found for customer:', customerId);
           return [];
         }
-        console.error('[Connex] Error response:', responseText);
+        const errorText = await response.text();
+        console.error('[Connex] Error response:', errorText);
         throw new Error(`Failed to fetch interactions: ${response.statusText}`);
       }
+
+      const responseText = await response.text();
+      console.log('[Connex] Raw response:', responseText);
 
       const data: ConnexResponse = JSON.parse(responseText);
       console.log(`[Connex] Found ${data.data?.length || 0} interactions for customer:`, customerId);
@@ -325,21 +312,22 @@ export class ConnexService {
       const url = `https://hippovehicle-cxm-api.cnx1.cloud/user/${userId}`;
       console.log('[Connex] Making request to:', url);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+      // Log request details
+      const headers = {
+        Authorization: `Bearer ${accessToken}`,
+        "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
+        "Accept": "application/json",
+      };
+      console.log('[Connex] Request headers:', JSON.stringify(headers, null, 2));
 
       const response = await fetch(url, {
         method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
-          "Accept": "application/json",
-        },
-        signal: controller.signal,
+        headers,
       });
 
-      clearTimeout(timeoutId);
-
+      console.log('[Connex] User response status:', response.status, response.statusText);
+      console.log('[Connex] Response headers:', JSON.stringify(Object.fromEntries([...response.headers.entries()]), null, 2));
+      
       if (!response.ok) {
         if (response.status === 404) {
           console.log('[Connex] No user found for ID:', userId);
