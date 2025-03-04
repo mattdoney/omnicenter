@@ -140,19 +140,44 @@ export class ConnexService {
     }
   }
 
+  private formatPhoneNumber(phoneNumber: string): string {
+    // Remove any spaces or special characters
+    const cleaned = phoneNumber.replace(/[^\d+]/g, '');
+    
+    // If it already has a +, return as is
+    if (cleaned.startsWith('+')) {
+      return cleaned;
+    }
+    
+    // If it starts with 00, replace with +
+    if (cleaned.startsWith('00')) {
+      return '+' + cleaned.slice(2);
+    }
+    
+    // If it starts with 0, assume UK number and add +44
+    if (cleaned.startsWith('0')) {
+      return '+44' + cleaned.slice(1);
+    }
+    
+    // If it starts with 44, add +
+    if (cleaned.startsWith('44')) {
+      return '+' + cleaned;
+    }
+    
+    // Default case: assume UK number without leading 0
+    return '+44' + cleaned;
+  }
+
   async getInteractions(phoneNumber: string): Promise<ConnexInteraction[]> {
-    const formattedNumber = phoneNumber.startsWith('0') 
-      ? `+44${phoneNumber.substring(1)}` 
-      : phoneNumber.startsWith('+44') 
-        ? phoneNumber 
-        : `+44${phoneNumber}`;
+    const formattedNumber = this.formatPhoneNumber(phoneNumber);
+    console.log(`[Connex] Formatted phone number from ${phoneNumber} to ${formattedNumber}`);
 
     try {
       const accessToken = await this.getAccessToken();
-      const encodedNumber = encodeURIComponent(formattedNumber);
-      const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodedNumber}`;
+      // Try searching by phone number directly first
+      const searchByPhoneUrl = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[phone]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
 
-      const response = await this.fetchWithTimeout(url, {
+      const response = await this.fetchWithTimeout(searchByPhoneUrl, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -161,16 +186,52 @@ export class ConnexService {
         },
       });
 
-      if (!response.ok) {
-        if (response.status === 404) {
+      // If phone search fails, try subject search as fallback
+      if (!response.ok && response.status !== 404) {
+        console.log('[Connex] Phone search failed, trying subject search');
+        const searchBySubjectUrl = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
+        
+        const subjectResponse = await this.fetchWithTimeout(searchBySubjectUrl, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
+            "Accept": "application/json",
+          },
+        });
+
+        if (!subjectResponse.ok) {
+          if (subjectResponse.status === 404) {
+            return [];
+          }
+          const errorText = await subjectResponse.text();
+          console.error('[Connex] Subject search error:', errorText);
           return [];
         }
-        throw new Error(`Failed to fetch interactions: ${response.statusText}`);
+
+        const data: ConnexResponse = await subjectResponse.json();
+        return data.data || [];
       }
 
-      const data: ConnexResponse = await response.json();
-      return data.data || [];
+      // Handle successful phone search
+      if (response.ok) {
+        const data: ConnexResponse = await response.json();
+        return data.data || [];
+      }
+
+      // Handle 404 from phone search
+      if (response.status === 404) {
+        return [];
+      }
+
+      const errorText = await response.text();
+      console.error('[Connex] Phone search error:', errorText);
+      return [];
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error(`[Connex] Request timed out after ${this.API_TIMEOUT}ms`);
+        return [];
+      }
       console.error(`[Connex] Error fetching interactions for phone number ${phoneNumber}:`, error);
       return [];
     }
