@@ -75,10 +75,10 @@ export default function Home() {
         }
         await loadMessages();
     };
-    return (<main className="min-h-screen bg-white">
+    return (<main className="min-h-screen">
       <div className="flex flex-col w-full max-w-3xl mx-auto p-4 space-y-4">
         <div className="flex flex-col space-y-4 sm:flex-row sm:space-x-4 sm:space-y-0">
-          <input type="text" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="Enter phone number or email address" className="flex-1 p-2 border rounded-lg" onKeyDown={(e) => {
+          <input type="text" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="Enter phone number or email address" className="flex-1 p-2 border rounded-lg text-black" onKeyDown={(e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 handleSearch();
@@ -96,22 +96,22 @@ export default function Home() {
         {messages.length > 0 && (<div className="flex space-x-2 mb-4">
             <button onClick={() => setSelectedType('all')} className={`px-3 py-1 rounded-lg ${selectedType === 'all'
                 ? 'bg-gray-800 text-white'
-                : 'bg-gray-200 hover:bg-gray-300'}`}>
+                : 'bg-gray-200 hover:bg-gray-300 text-black'}`}>
               All
             </button>
             <button onClick={() => setSelectedType('sms')} className={`px-3 py-1 rounded-lg ${selectedType === 'sms'
                 ? 'bg-purple-600 text-white'
-                : 'bg-purple-100 hover:bg-purple-200'}`}>
+                : 'bg-purple-100 hover:bg-purple-200 text-black'}`}>
               SMS
             </button>
             <button onClick={() => setSelectedType('email')} className={`px-3 py-1 rounded-lg ${selectedType === 'email'
                 ? 'bg-blue-600 text-white'
-                : 'bg-blue-100 hover:bg-blue-200'}`}>
+                : 'bg-blue-100 hover:bg-blue-200 text-black'}`}>
               Email
             </button>
             <button onClick={() => setSelectedType('call')} className={`px-3 py-1 rounded-lg ${selectedType === 'call'
                 ? 'bg-green-600 text-white'
-                : 'bg-green-100 hover:bg-green-200'}`}>
+                : 'bg-green-100 hover:bg-green-200 text-black'}`}>
               Calls
             </button>
           </div>)}
