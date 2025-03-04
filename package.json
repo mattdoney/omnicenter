@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/build-server.mjs && node server.mjs",
-    "build": "next build && node scripts/build-server.mjs",
+    "build": "VERCEL_REGION=lhr1 next build && node scripts/build-server.mjs",
     "build:widget": "webpack --config webpack.widget.config.js",
     "start": "NODE_ENV=production node server.mjs",
     "lint": "next lint"

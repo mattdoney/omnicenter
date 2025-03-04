@@ -1,7 +1,6 @@
 import { getEnvConfig } from '@/config/env';
 import axios from 'axios';
 import https from 'https';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 
 interface ConnexInteraction {
   id: string;
