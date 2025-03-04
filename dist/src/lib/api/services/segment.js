@@ -8,15 +8,26 @@ export class SegmentService {
         return SegmentService.instance;
     }
     formatPhoneNumber(phoneNumber) {
-        // Remove any non-digit characters
-        const cleaned = phoneNumber.replace(/\D/g, '');
-        // Handle UK numbers
-        if (cleaned.startsWith('07') || cleaned.startsWith('447')) {
-            // Remove leading 0 if present and add +44
-            const withoutLeadingZero = cleaned.startsWith('0') ? cleaned.slice(1) : cleaned;
-            return withoutLeadingZero.startsWith('44') ? `+${withoutLeadingZero}` : `+44${withoutLeadingZero}`;
+        // Remove any non-digit characters except +
+        const cleaned = phoneNumber.replace(/[^\d+]/g, '');
+        // If it already has a +, return as is
+        if (cleaned.startsWith('+')) {
+            return cleaned;
         }
-        return `+${cleaned}`;
+        // If it starts with 00, replace with +
+        if (cleaned.startsWith('00')) {
+            return '+' + cleaned.slice(2);
+        }
+        // If it starts with 0, assume UK number and add +44
+        if (cleaned.startsWith('0')) {
+            return '+44' + cleaned.slice(1);
+        }
+        // If it starts with 44, add +
+        if (cleaned.startsWith('44')) {
+            return '+' + cleaned;
+        }
+        // Default case: assume UK number without leading 0
+        return '+44' + cleaned;
     }
     async getExternalIds(identifier) {
         const response = await fetch(`/api/segment/external-ids?identifier=${encodeURIComponent(identifier)}`);
