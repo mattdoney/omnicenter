@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ConnexService } from '@/lib/api/services/connexone';
 import { ConnexInteraction } from '@/types/connex';
-import { FormattedInteraction, BaseInteraction } from '@/types/interactions';
-import { headers } from 'next/headers';
+import { BaseInteraction } from '@/types/interactions';
 
 // Force Node.js runtime for better API compatibility
 export const runtime = 'nodejs';
