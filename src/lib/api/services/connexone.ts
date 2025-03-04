@@ -29,19 +29,8 @@ export class ConnexService {
     token: string;
     expiresAt: number;
   } | null = null;
-  private userDisplayNameCache: Map<string, string> = new Map();
-  private API_TIMEOUT = 8000; // 8 seconds timeout
-  private TOKEN_TIMEOUT: number;
-  private INTERACTION_TIMEOUT: number;
-  private readonly BASE_URL = 'https://hippovehicle-cxm-api.cnx1.cloud';
-  private readonly AUTH_URL = 'https://apigateway-hippovehicle-cxm.cnx1.cloud';
 
-  private constructor() {
-    // Initialize timeouts based on environment
-    this.TOKEN_TIMEOUT = process.env.VERCEL_ENV === 'production' ? 12000 : 8000;
-    this.INTERACTION_TIMEOUT = process.env.VERCEL_ENV === 'production' ? 12000 : 8000;
-    console.log(`[Connex] Initializing with timeouts - Token: ${this.TOKEN_TIMEOUT}ms, Interaction: ${this.INTERACTION_TIMEOUT}ms`);
-  }
+  private constructor() {}
 
   static getInstance(): ConnexService {
     if (!ConnexService.instance) {
@@ -50,69 +39,26 @@ export class ConnexService {
     return ConnexService.instance;
   }
 
-  private async fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.API_TIMEOUT);
-
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal
-      });
-      return response;
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-
-  private async retryWithBackoff<T>(
-    operation: () => Promise<T>,
-    retries = 3,
-    delay = 1000,
-    backoff = 1.5,
-    timeout?: number
-  ): Promise<T> {
-    try {
-      if (timeout) {
-        return await Promise.race([
-          operation(),
-          new Promise<never>((_, reject) => 
-            setTimeout(() => reject(new Error('Operation timed out')), timeout)
-          )
-        ]);
-      }
-      return await operation();
-    } catch (error) {
-      if (retries === 0) {
-        throw error;
-      }
-      console.log(`[Connex] Retrying operation in ${delay}ms, ${retries} retries left`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return this.retryWithBackoff(operation, retries - 1, delay * backoff, backoff, timeout);
-    }
-  }
-
   private async getAccessToken(): Promise<string> {
-    return this.retryWithBackoff(async () => {
-      console.log('[Connex] Getting access token');
-      if (this.tokenCache && Date.now() < (this.tokenCache.expiresAt - 30000)) {
-        console.log('[Connex] Using cached token, expires in:', Math.round((this.tokenCache.expiresAt - Date.now()) / 1000), 'seconds');
-        return this.tokenCache.token;
-      }
+    console.log('[Connex] Getting access token');
+    // Check if we have a valid cached token
+    if (this.tokenCache && Date.now() < this.tokenCache.expiresAt) {
+      console.log('[Connex] Using cached token, expires in:', Math.round((this.tokenCache.expiresAt - Date.now()) / 1000), 'seconds');
+      return this.tokenCache.token;
+    }
 
-      const config = getEnvConfig();
-      const clientId = config.CONNEX_CLIENT_ID;
-      const clientSecret = config.CONNEX_CLIENT_SECRET;
+    const config = getEnvConfig();
+    console.log('[Connex] Config loaded, client ID length:', config.CONNEX_CLIENT_ID?.length);
+    console.log('[Connex] Config loaded, client secret length:', config.CONNEX_CLIENT_SECRET?.length);
 
-      if (!clientId || !clientSecret) {
-        throw new Error('[Connex] Missing client credentials');
-      }
-
-      const tokenUrl = `${this.AUTH_URL}/oauth2/token`;
+    try {
+      const tokenUrl = "https://apigateway-hippovehicle-cxm.cnx1.cloud/oauth2/token";
+      console.log('[Connex] Requesting token from:', tokenUrl);
+      
       const formData = new URLSearchParams();
       formData.append('grant_type', 'client_credentials');
-      formData.append('client_id', clientId);
-      formData.append('client_secret', clientSecret);
+      formData.append('client_id', config.CONNEX_CLIENT_ID || '');
+      formData.append('client_secret', config.CONNEX_CLIENT_SECRET || '');
 
       const response = await fetch(tokenUrl, {
         method: "POST",
@@ -123,41 +69,48 @@ export class ConnexService {
         body: formData,
       });
 
+      console.log('[Connex] Token response status:', response.status, response.statusText);
+
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Failed to fetch access token: ${response.status} ${response.statusText} - ${errorText}`);
+        console.error('[Connex] Token error response:', errorText);
+        throw new Error(`Failed to fetch access token: ${response.statusText}`);
       }
 
       const data = await response.json();
+      console.log('[Connex] Token received, expires in:', data.expires_in, 'seconds');
       
-      if (!data.access_token || !data.expires_in) {
-        throw new Error(`[Connex] Invalid token response: ${JSON.stringify(data)}`);
-      }
-
+      // Cache the token with expiration
       this.tokenCache = {
         token: data.access_token,
-        expiresAt: Date.now() + (data.expires_in * 1000),
+        expiresAt: Date.now() + (data.expires_in * 1000), // expires_in is in seconds
       };
 
-      console.log('[Connex] Successfully retrieved new access token');
       return data.access_token;
-    }, 3, 1000, 1.5, this.TOKEN_TIMEOUT);
+    } catch (error) {
+      console.error("[Connex] Error fetching access token:", error);
+      throw error;
+    }
   }
 
-  async getUserDisplayName(userId?: string): Promise<string | undefined> {
-    if (!userId) return undefined;
-    
-    // Check cache first
-    const cachedName = this.userDisplayNameCache.get(userId);
-    if (cachedName) {
-      return cachedName;
-    }
+  async getInteractions(phoneNumber: string): Promise<ConnexInteraction[]> {
+    // Convert phone number to +44 format
+    const formattedNumber = phoneNumber.startsWith('0') 
+      ? `+44${phoneNumber.substring(1)}` 
+      : phoneNumber.startsWith('+44') 
+        ? phoneNumber 
+        : `+44${phoneNumber}`;
 
+    console.log(`[Connex] Fetching interactions for phone number: ${formattedNumber}`);
     try {
       const accessToken = await this.getAccessToken();
-      const url = `${this.BASE_URL}/user/${userId}`;
-      
-      const response = await this.fetchWithTimeout(url, {
+      console.log('[Connex] Got access token, length:', accessToken.length);
+
+      const encodedNumber = encodeURIComponent(formattedNumber);
+      const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodedNumber}`;
+      console.log('[Connex] Making request to:', url);
+
+      const response = await fetch(url, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -166,144 +119,28 @@ export class ConnexService {
         },
       });
 
+      console.log('[Connex] Interactions response status:', response.status, response.statusText);
+      const responseText = await response.text();
+      console.log('[Connex] Raw response:', responseText);
+
       if (!response.ok) {
-        if (response.status !== 404) {
-          console.error(`[Connex] Error fetching user ${userId}:`, response.statusText);
-        }
-        return undefined;
-      }
-
-      const userData: ConnexUser = await response.json();
-      const displayName = userData.data.display_name;
-      
-      // Cache the result
-      this.userDisplayNameCache.set(userId, displayName);
-      
-      return displayName;
-    } catch (error) {
-      console.error(`[Connex] Error fetching user ${userId}:`, error);
-      return undefined;
-    }
-  }
-
-  private formatPhoneNumber(phoneNumber: string): string {
-    // Remove any spaces or special characters
-    const cleaned = phoneNumber.replace(/[^\d+]/g, '');
-    
-    // If it already has a +, return as is
-    if (cleaned.startsWith('+')) {
-      return cleaned;
-    }
-    
-    // If it starts with 00, replace with +
-    if (cleaned.startsWith('00')) {
-      return '+' + cleaned.slice(2);
-    }
-    
-    // If it starts with 0, assume UK number and add +44
-    if (cleaned.startsWith('0')) {
-      return '+44' + cleaned.slice(1);
-    }
-    
-    // If it starts with 44, add +
-    if (cleaned.startsWith('44')) {
-      return '+' + cleaned;
-    }
-    
-    // Default case: assume UK number without leading 0
-    return '+44' + cleaned;
-  }
-
-  private async makeRequest(url: string, options: RequestInit, timeout: number): Promise<Response> {
-    try {
-      console.log(`[Connex] Making request to ${url} with ${timeout}ms timeout`);
-      const startTime = Date.now();
-      const response = await fetch(url, {
-        ...options,
-        headers: {
-          ...options.headers,
-          "Accept": "application/json",
-          "Cache-Control": "no-cache",
-        },
-        next: {
-          revalidate: 0
-        }
-      });
-
-      console.log(`[Connex] Request completed in ${Date.now() - startTime}ms with status ${response.status}`);
-      return response;
-    } catch (error) {
-      console.error('[Connex] Request failed:', error);
-      throw error;
-    }
-  }
-
-  async getInteractions(phoneNumber: string): Promise<ConnexInteraction[]> {
-    return this.retryWithBackoff(async () => {
-      const formattedNumber = this.formatPhoneNumber(phoneNumber);
-      console.log(`[Connex] Formatted phone number from ${phoneNumber} to ${formattedNumber}`);
-
-      const accessToken = await this.getAccessToken();
-      console.log('[Connex] Successfully retrieved access token, making API request');
-      
-      // Try searching by phone number directly first
-      const searchByPhoneUrl = `${this.BASE_URL}/interaction?filter[phone]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
-      
-      try {
-        const response = await this.makeRequest(searchByPhoneUrl, {
-          method: "GET",
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "X-Authorization": "Basic MjA2MzpNYW5jaGVzdGVyMSM=",
-          }
-        }, this.INTERACTION_TIMEOUT);
-
-        // If phone search fails, try subject search as fallback
-        if (!response.ok && response.status !== 404) {
-          console.log('[Connex] Phone search failed with status', response.status, 'trying subject search');
-          const searchBySubjectUrl = `${this.BASE_URL}/interaction?filter[subject]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
-          
-          const subjectResponse = await this.makeRequest(searchBySubjectUrl, {
-            method: "GET",
-            headers: {
-              "Authorization": `Bearer ${accessToken}`,
-              "X-Authorization": "Basic MjA2MzpNYW5jaGVzdGVyMSM=",
-            }
-          }, this.INTERACTION_TIMEOUT);
-
-          if (!subjectResponse.ok) {
-            if (subjectResponse.status !== 404) {
-              const errorText = await subjectResponse.text();
-              console.error('[Connex] Subject search failed:', subjectResponse.status, errorText);
-            }
-            return [];
-          }
-
-          const data: ConnexResponse = await subjectResponse.json();
-          console.log(`[Connex] Subject search successful, found ${data.data?.length || 0} interactions`);
-          return data.data || [];
-        }
-
-        if (!response.ok) {
-          if (response.status !== 404) {
-            const errorText = await response.text();
-            console.error('[Connex] Phone search failed:', response.status, errorText);
-          }
+        if (response.status === 404) {
+          console.log('[Connex] No interactions found for phone number:', formattedNumber);
           return [];
         }
-
-        const data: ConnexResponse = await response.json();
-        console.log(`[Connex] Phone search successful, found ${data.data?.length || 0} interactions`);
-        return data.data || [];
-      } catch (error) {
-        if (error instanceof Error) {
-          console.error(`[Connex] Request failed: ${error.name} - ${error.message}`);
-          // Rethrow to trigger retry
-          throw error;
-        }
-        return [];
+        console.error('[Connex] Error response:', responseText);
+        throw new Error(`Failed to fetch interactions: ${response.statusText}`);
       }
-    }, 3, 1000, 1.5, this.INTERACTION_TIMEOUT * 2); // Double timeout for the entire operation
+
+      const data: ConnexResponse = JSON.parse(responseText);
+      console.log(`[Connex] Found ${data.data?.length || 0} interactions for phone number:`, formattedNumber);
+      console.log('[Connex] Full response data:', JSON.stringify(data, null, 2));
+
+      return data.data || [];
+    } catch (error) {
+      console.error(`[Connex] Error fetching interactions for phone number ${phoneNumber}:`, error);
+      return [];
+    }
   }
 
   async getInteractionsForPhoneNumber(phoneNumber: string): Promise<ConnexInteraction[]> {
@@ -361,10 +198,12 @@ export class ConnexService {
     console.log(`[Connex] Fetching interactions for customer ID: ${customerId}`);
     try {
       const accessToken = await this.getAccessToken();
-      const url = `${this.BASE_URL}/interaction?filter[customer_id=${customerId}]`;
+      console.log('[Connex] Got access token, length:', accessToken.length);
+
+      const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[customer_id=${customerId}]`;
       console.log('[Connex] Making request to:', url);
 
-      const response = await this.fetchWithTimeout(url, {
+      const response = await fetch(url, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -397,6 +236,45 @@ export class ConnexService {
     } catch (error) {
       console.error(`[Connex] Error fetching interactions for customer ${customerId}:`, error);
       return [];
+    }
+  }
+
+  async getUserDisplayName(userId: string | undefined): Promise<string | null> {
+    if (!userId) {
+      console.log('[Connex] No user ID provided');
+      return null;
+    }
+
+    try {
+      const accessToken = await this.getAccessToken();
+      console.log('[Connex] Getting user info for ID:', userId);
+
+      const url = `https://hippovehicle-cxm-api.cnx1.cloud/user/${userId}`;
+      console.log('[Connex] Making request to:', url);
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
+          "Accept": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('[Connex] No user found for ID:', userId);
+          return null;
+        }
+        throw new Error(`Failed to fetch user: ${response.statusText}`);
+      }
+
+      const data: ConnexUser = await response.json();
+      console.log('[Connex] Found user:', data);
+      return data.data.display_name;
+    } catch (error) {
+      console.error(`[Connex] Error fetching user for ID ${userId}:`, error);
+      return null;
     }
   }
 }
