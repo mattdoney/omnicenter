@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ConnexService } from '@/lib/api/services/connexone';
+import { ConnexInteraction } from '@/types/connex';
 
 interface BaseInteraction {
   id: string;
@@ -44,84 +45,75 @@ export async function GET(request: Request) {
     console.log(`[Connex API] Starting request for phone number ${phoneNumber}`);
     const connexService = ConnexService.getInstance();
     
-    // Set a timeout for the entire operation
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Operation timeout')), 55000); // 55 second timeout
+    const timeoutPromise = new Promise<ConnexInteraction[]>((_, reject) => {
+      setTimeout(() => reject(new Error('Operation timeout')), 55000);
     });
 
     const interactionsPromise = connexService.getInteractions(phoneNumber);
     
     try {
-      const interactions = await Promise.race([interactionsPromise, timeoutPromise]);
+      const interactions = await Promise.any([
+        interactionsPromise,
+        timeoutPromise
+      ]);
       
-      // Process interactions in parallel with a timeout
-      const formattedInteractions = await Promise.race<FormattedInteraction[]>([
-        Promise.all(
-          interactions.map(async (interaction) => {
-            // Check if we're approaching the timeout
-            if (Date.now() - startTime > 50000) { // Leave 10s buffer
-              throw new Error('Processing time limit approaching');
+      const processingTimeout = new Promise<FormattedInteraction[]>((_, reject) => 
+        setTimeout(() => reject(new Error('Processing timeout')), 55000)
+      );
+
+      const processedInteractions = Promise.all(
+        interactions.map(async (interaction: ConnexInteraction) => {
+          if (Date.now() - startTime > 50000) { // Leave 10s buffer
+            throw new Error('Processing time limit approaching');
+          }
+
+          const type = interaction.type_name === 'voice' ? 'call' : 
+                      interaction.type_name === 'sms' ? 'sms' : 'email';
+          
+          const baseMessage: BaseInteraction = {
+            id: `connex_${interaction.id}`,
+            timestamp: new Date(interaction.start_time),
+            platform: 'connex',
+            type,
+            direction: interaction.direction === 'none' ? 'outbound' : 
+                      interaction.direction === 'internal' ? 'outbound' : interaction.direction,
+            body: interaction.subject || `${type.toUpperCase()} Interaction`,
+            status: interaction.status_name,
+          };
+
+          if (type === 'call' && interaction.user_id && (Date.now() - startTime < 45000)) {
+            const duration = interaction.end_time 
+              ? Math.round((new Date(interaction.end_time).getTime() - new Date(interaction.start_time).getTime()) / 1000)
+              : 0;
+
+            try {
+              const userDisplayName = await connexService.getUserDisplayName(interaction.user_id);
+              return {
+                ...baseMessage,
+                type: 'call' as const,
+                phoneNumber: '',
+                duration,
+                userDisplayName,
+              };
+            } catch (error) {
+              console.error('[Connex API] Error fetching user display name:', error);
+              return {
+                ...baseMessage,
+                type: 'call' as const,
+                phoneNumber: '',
+                duration,
+              };
             }
+          }
 
-            const type = interaction.type_name === 'voice' ? 'call' : 
-                        interaction.type_name === 'sms' ? 'sms' : 'email';
-            
-            const baseMessage: BaseInteraction = {
-              id: `connex_${interaction.id}`,
-              timestamp: new Date(interaction.start_time),
-              platform: 'connex',
-              type,
-              direction: interaction.direction === 'none' ? 'outbound' : interaction.direction,
-              body: interaction.subject || `${type.toUpperCase()} Interaction`,
-              status: interaction.status_name,
-            };
+          return baseMessage;
+        })
+      );
 
-            // Only fetch additional data for calls if we have time
-            if (type === 'call' && interaction.user_id && (Date.now() - startTime < 45000)) {
-              const duration = interaction.end_time 
-                ? Math.round((new Date(interaction.end_time).getTime() - new Date(interaction.start_time).getTime()) / 1000)
-                : 0;
-
-              try {
-                const userDisplayName = await connexService.getUserDisplayName(interaction.user_id);
-                return {
-                  ...baseMessage,
-                  type: 'call' as const,
-                  phoneNumber: '',
-                  duration,
-                  userDisplayName,
-                };
-              } catch (error) {
-                console.error('[Connex API] Error fetching user display name:', error);
-                return {
-                  ...baseMessage,
-                  type: 'call' as const,
-                  phoneNumber: '',
-                  duration,
-                };
-              }
-            }
-
-            return baseMessage;
-          })
-        ),
-        new Promise<FormattedInteraction[]>((_, reject) => 
-          setTimeout(() => reject(new Error('Processing timeout')), 55000)
-        )
-      ]).catch(error => {
-        console.error('[Connex API] Error processing interactions:', error);
-        // Return basic formatted interactions without additional data
-        return interactions.map(interaction => ({
-          id: `connex_${interaction.id}`,
-          timestamp: new Date(interaction.start_time),
-          platform: 'connex' as const,
-          type: interaction.type_name === 'voice' ? 'call' as const : 
-                interaction.type_name === 'sms' ? 'sms' as const : 'email' as const,
-          direction: interaction.direction === 'none' ? 'outbound' : interaction.direction,
-          body: interaction.subject || `${interaction.type_name.toUpperCase()} Interaction`,
-          status: interaction.status_name,
-        }));
-      });
+      const formattedInteractions = await Promise.any([
+        processedInteractions,
+        processingTimeout
+      ]);
 
       const processingTime = Date.now() - startTime;
       console.log(`[Connex API] Request completed in ${processingTime}ms`);
@@ -132,7 +124,7 @@ export async function GET(request: Request) {
         processingTime,
       });
     } catch (error) {
-      console.error('[Connex API] Timeout or error fetching interactions:', error);
+      console.error('[Connex API] Error processing interactions:', error);
       return NextResponse.json(
         { 
           error: 'Request timeout or error',
