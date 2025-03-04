@@ -20,7 +20,9 @@ interface CallInteraction extends BaseInteraction {
 
 type FormattedInteraction = BaseInteraction | CallInteraction;
 
-export const maxDuration = 8; // Set max duration to 8 seconds
+export const maxDuration = 15; // Increase max duration to 15 seconds to allow for retries
+
+export const runtime = 'edge'; // Enable edge runtime for better performance
 
 export async function GET(request: Request) {
   try {

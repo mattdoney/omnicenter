@@ -207,72 +207,75 @@ export class ConnexService {
   }
 
   async getInteractions(phoneNumber: string): Promise<ConnexInteraction[]> {
-    const formattedNumber = this.formatPhoneNumber(phoneNumber);
-    console.log(`[Connex] Formatted phone number from ${phoneNumber} to ${formattedNumber}`);
+    return this.retryWithBackoff(async () => {
+      const formattedNumber = this.formatPhoneNumber(phoneNumber);
+      console.log(`[Connex] Formatted phone number from ${phoneNumber} to ${formattedNumber}`);
 
-    try {
       const accessToken = await this.getAccessToken();
+      
       // Try searching by phone number directly first
       const searchByPhoneUrl = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[phone]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 second timeout for interaction requests
 
-      const response = await this.fetchWithTimeout(searchByPhoneUrl, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
-          "Accept": "application/json",
-        },
-      });
-
-      // If phone search fails, try subject search as fallback
-      if (!response.ok && response.status !== 404) {
-        console.log('[Connex] Phone search failed, trying subject search');
-        const searchBySubjectUrl = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
-        
-        const subjectResponse = await this.fetchWithTimeout(searchBySubjectUrl, {
+      try {
+        const response = await fetch(searchByPhoneUrl, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${accessToken}`,
             "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
             "Accept": "application/json",
           },
+          signal: controller.signal
         });
 
-        if (!subjectResponse.ok) {
-          if (subjectResponse.status === 404) {
-            return [];
+        // If phone search fails, try subject search as fallback
+        if (!response.ok && response.status !== 404) {
+          console.log('[Connex] Phone search failed, trying subject search');
+          const searchBySubjectUrl = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
+          
+          clearTimeout(timeoutId);
+          const subjectTimeoutId = setTimeout(() => controller.abort(), 4000);
+          
+          try {
+            const subjectResponse = await fetch(searchBySubjectUrl, {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
+                "Accept": "application/json",
+              },
+              signal: controller.signal
+            });
+
+            if (!subjectResponse.ok) {
+              if (subjectResponse.status !== 404) {
+                console.error('[Connex] Subject search failed:', subjectResponse.status, subjectResponse.statusText);
+              }
+              return [];
+            }
+
+            const data: ConnexResponse = await subjectResponse.json();
+            return data.data || [];
+          } finally {
+            clearTimeout(subjectTimeoutId);
           }
-          const errorText = await subjectResponse.text();
-          console.error('[Connex] Subject search error:', errorText);
+        }
+
+        if (!response.ok) {
+          if (response.status !== 404) {
+            console.error('[Connex] Phone search failed:', response.status, response.statusText);
+          }
           return [];
         }
 
-        const data: ConnexResponse = await subjectResponse.json();
-        return data.data || [];
-      }
-
-      // Handle successful phone search
-      if (response.ok) {
         const data: ConnexResponse = await response.json();
         return data.data || [];
+      } finally {
+        clearTimeout(timeoutId);
       }
-
-      // Handle 404 from phone search
-      if (response.status === 404) {
-        return [];
-      }
-
-      const errorText = await response.text();
-      console.error('[Connex] Phone search error:', errorText);
-      return [];
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.error(`[Connex] Request timed out after ${this.API_TIMEOUT}ms`);
-        return [];
-      }
-      console.error(`[Connex] Error fetching interactions for phone number ${phoneNumber}:`, error);
-      return [];
-    }
+    }, 2, 500); // 2 retries with 500ms initial delay
   }
 
   async getInteractionsForPhoneNumber(phoneNumber: string): Promise<ConnexInteraction[]> {
