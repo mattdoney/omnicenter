@@ -7,7 +7,6 @@ export default function Home() {
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [newMessage, setNewMessage] = useState('');
     const [selectedType, setSelectedType] = useState('all');
     const filteredMessages = useMemo(() => {
         if (selectedType === 'all')
@@ -76,25 +75,6 @@ export default function Home() {
         }
         await loadMessages();
     };
-    const handleSend = async () => {
-        if (!identifier.trim() || !newMessage.trim())
-            return;
-        try {
-            const apiClient = APIClient.getInstance();
-            await apiClient.sendMessage({
-                emailAddress: identifier.includes('@') ? identifier : undefined,
-                phoneNumber: identifier.includes('@') ? undefined : identifier,
-                body: newMessage,
-                subject: 'New Message',
-            });
-            setNewMessage('');
-            loadMessages();
-        }
-        catch (err) {
-            console.error('Error sending message:', err);
-            setError('Failed to send message. Please try again.');
-        }
-    };
     return (<main className="min-h-screen bg-white">
       <div className="flex flex-col w-full max-w-3xl mx-auto p-4 space-y-4">
         <div className="flex flex-col space-y-4 sm:flex-row sm:space-x-4 sm:space-y-0">
@@ -137,18 +117,6 @@ export default function Home() {
           </div>)}
 
         <Timeline messages={filteredMessages}/>
-
-        {identifier && (<div className="flex space-x-2">
-            <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Type a message..." className="flex-1 p-2 border rounded-lg" onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                }
-            }}/>
-            <button onClick={handleSend} disabled={!newMessage.trim()} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed">
-              Send
-            </button>
-          </div>)}
       </div>
     </main>);
 }
