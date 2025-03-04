@@ -1,80 +1,65 @@
 'use client';
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import Timeline from '@/components/Timeline/Timeline';
 import { APIClient } from '@/lib/api/client';
+import { useSearchParams } from 'next/navigation';
 export default function Home() {
     const [identifier, setIdentifier] = useState('');
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [selectedType, setSelectedType] = useState('all');
+    const searchParams = useSearchParams();
     const filteredMessages = useMemo(() => {
         if (selectedType === 'all')
             return messages;
         return messages.filter(msg => msg.type === selectedType);
     }, [messages, selectedType]);
-    const loadMessages = useCallback(async () => {
-        if (!identifier.trim())
+    const loadMessages = useCallback(async (searchIdentifier) => {
+        if (!searchIdentifier.trim())
             return;
         setLoading(true);
         setError(null);
         try {
             // First, try to get associated identifiers from Segment
-            console.log('Loading identifiers from Segment:', identifier);
-            const segmentResponse = await fetch(`/api/segment/external-ids?identifier=${encodeURIComponent(identifier)}`);
+            console.log('Loading identifiers from Segment:', searchIdentifier);
+            const segmentResponse = await fetch(`/api/segment/external-ids?identifier=${encodeURIComponent(searchIdentifier)}`);
             if (!segmentResponse.ok) {
                 throw new Error(`Failed to load Segment identifiers: ${segmentResponse.statusText}`);
             }
             const segmentData = await segmentResponse.json();
-            console.log('Segment identifiers loaded:', segmentData);
-            // Extract email and phone from Segment response
-            let emailAddress = identifier.includes('@') ? identifier : undefined;
-            let phoneNumber = identifier.includes('@') ? undefined : identifier;
-            for (const externalId of segmentData.data) {
-                if (externalId.type === 'email' && !emailAddress) {
-                    emailAddress = externalId.id;
-                }
-                else if (externalId.type === 'phone' && !phoneNumber) {
-                    phoneNumber = externalId.id;
-                }
-            }
-            // Use APIClient to fetch all messages
+            console.log('Segment data:', segmentData);
+            // Now fetch messages for all identifiers
             const apiClient = APIClient.getInstance();
             const result = await apiClient.getMessages({
-                emailAddress,
-                phoneNumber,
+                emailAddress: searchIdentifier.includes('@') ? searchIdentifier : undefined,
+                phoneNumber: searchIdentifier.includes('@') ? undefined : searchIdentifier,
+                associatedIdentifiers: segmentData.identifiers || [],
             });
-            console.log('[Page] Received messages:', result.messages.map(m => ({ id: m.id, type: m.type, timestamp: m.timestamp })));
-            // Check for duplicates
-            const messageIds = new Set();
-            const duplicates = result.messages.filter(msg => {
-                if (messageIds.has(msg.id)) {
-                    console.log('[Page] Found duplicate message:', msg);
-                    return true;
-                }
-                messageIds.add(msg.id);
-                return false;
-            });
-            if (duplicates.length > 0) {
-                console.log('[Page] Found duplicate messages:', duplicates.length);
-            }
+            console.log('Messages loaded:', result.messages.length);
             setMessages(result.messages);
+            setError(null);
         }
         catch (err) {
             console.error('Error loading messages:', err);
             setError('Failed to load messages. Please try again.');
+            setMessages([]);
         }
         finally {
             setLoading(false);
         }
-    }, [identifier]);
+    }, []);
     const handleSearch = async () => {
-        if (!identifier.trim()) {
-            setError('Please enter a phone number or email address');
-            return;
-        }
-        await loadMessages();
+        await loadMessages(identifier);
     };
+    // Check for query parameter on initial load
+    useEffect(() => {
+        const query = searchParams.get('q');
+        if (query) {
+            setIdentifier(query);
+            loadMessages(query);
+        }
+    }, [searchParams, loadMessages]);
     return (<main className="min-h-screen bg-black text-white">
       <div className="flex flex-col w-full max-w-3xl mx-auto p-4 space-y-4">
         <div className="flex flex-col space-y-4 sm:flex-row sm:space-x-4 sm:space-y-0">

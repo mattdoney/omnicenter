@@ -55,6 +55,7 @@ export interface MessageQueryParams {
   phoneNumber?: string;
   emailAddress?: string;
   customerIds?: string[];
+  associatedIdentifiers?: string[];
   startDate?: Date;
   endDate?: Date;
   page?: number;
