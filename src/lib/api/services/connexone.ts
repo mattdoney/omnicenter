@@ -142,67 +142,62 @@ export class ConnexService {
       const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodedNumber}`;
       console.log('[Connex] Making request to:', url);
 
-      // Create custom agent for better connection handling
-      const agent = new (await import('https')).Agent({
-        keepAlive: true,
-        keepAliveMsecs: 1000,
-        maxSockets: 10,
-        timeout: 10000
-      });
-
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
-          "Accept": "application/json",
-          "Connection": "keep-alive"
-        },
-        signal: controller.signal,
-        // @ts-ignore - Node fetch specific option
-        agent,
-        cache: 'no-store'
-      });
-
-      clearTimeout(timeoutId);
-
-      console.log('[Connex] Interactions response status:', response.status, response.statusText);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[Connex] Error response:', errorText);
-        if (response.status === 404) {
-          console.log('[Connex] No interactions found for phone number:', formattedNumber);
-          return [];
-        }
-        throw new Error(`Failed to fetch interactions: ${response.statusText} (${response.status})`);
-      }
-
-      const responseText = await response.text();
-      console.log('[Connex] Raw response:', responseText);
-
-      if (!responseText) {
-        console.log('[Connex] Empty response received');
-        return [];
-      }
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+        console.log('[Connex] Aborting request due to timeout');
+      }, 10000);
 
       try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
+            "Accept": "application/json",
+            "Connection": "keep-alive"
+          },
+          signal: controller.signal,
+          next: {
+            revalidate: 0
+          }
+        });
+
+        clearTimeout(timeoutId);
+
+        console.log('[Connex] Interactions response status:', response.status, response.statusText);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('[Connex] Error response:', errorText);
+          if (response.status === 404) {
+            console.log('[Connex] No interactions found for phone number:', formattedNumber);
+            return [];
+          }
+          throw new Error(`Failed to fetch interactions: ${response.statusText} (${response.status})`);
+        }
+
+        const responseText = await response.text();
+        console.log('[Connex] Raw response:', responseText);
+
+        if (!responseText) {
+          console.log('[Connex] Empty response received');
+          return [];
+        }
+
         const data: ConnexResponse = JSON.parse(responseText);
         console.log(`[Connex] Found ${data.data?.length || 0} interactions for phone number:`, formattedNumber);
         return data.data || [];
-      } catch (parseError) {
-        console.error('[Connex] Error parsing JSON response:', parseError);
-        console.log('[Connex] Invalid JSON response:', responseText);
-        return [];
+      } catch (fetchError) {
+        if (controller.signal.aborted) {
+          console.error('[Connex] Request aborted due to timeout');
+          return [];
+        }
+        throw fetchError;
+      } finally {
+        clearTimeout(timeoutId);
       }
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'TimeoutError') {
-        console.error('[Connex] Request timed out after 10 seconds');
-        return [];
-      }
       console.error(`[Connex] Error fetching interactions for phone number ${phoneNumber}:`, error);
       if (error instanceof Error) {
         console.error('[Connex] Error details:', {
