@@ -31,8 +31,18 @@ export class ConnexService {
   } | null = null;
   private userDisplayNameCache: Map<string, string> = new Map();
   private readonly API_TIMEOUT = 8000; // 8 seconds timeout
+  private readonly TOKEN_TIMEOUT = 8000; // 8 seconds for token requests
+  private readonly INTERACTION_TIMEOUT = 8000; // 8 seconds for interaction requests
+  private readonly BASE_URL = 'https://hippovehicle-cxm-api.cnx1.cloud';
+  private readonly AUTH_URL = 'https://apigateway-hippovehicle-cxm.cnx1.cloud';
 
-  private constructor() {}
+  private constructor() {
+    // Initialize timeouts based on environment
+    if (process.env.VERCEL_ENV === 'production') {
+      this.TOKEN_TIMEOUT = 12000; // 12 seconds for token in production
+      this.INTERACTION_TIMEOUT = 12000; // 12 seconds for interactions in production
+    }
+  }
 
   static getInstance(): ConnexService {
     if (!ConnexService.instance) {
@@ -58,11 +68,20 @@ export class ConnexService {
 
   private async retryWithBackoff<T>(
     operation: () => Promise<T>,
-    retries = 2,
+    retries = 3,
     delay = 1000,
-    backoff = 2
+    backoff = 1.5,
+    timeout?: number
   ): Promise<T> {
     try {
+      if (timeout) {
+        return await Promise.race([
+          operation(),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('Operation timed out')), timeout)
+          )
+        ]);
+      }
       return await operation();
     } catch (error) {
       if (retries === 0) {
@@ -70,14 +89,13 @@ export class ConnexService {
       }
       console.log(`[Connex] Retrying operation in ${delay}ms, ${retries} retries left`);
       await new Promise(resolve => setTimeout(resolve, delay));
-      return this.retryWithBackoff(operation, retries - 1, delay * backoff, backoff);
+      return this.retryWithBackoff(operation, retries - 1, delay * backoff, backoff, timeout);
     }
   }
 
   private async getAccessToken(): Promise<string> {
     return this.retryWithBackoff(async () => {
       console.log('[Connex] Getting access token');
-      // Check if we have a valid cached token with 30s buffer
       if (this.tokenCache && Date.now() < (this.tokenCache.expiresAt - 30000)) {
         console.log('[Connex] Using cached token, expires in:', Math.round((this.tokenCache.expiresAt - Date.now()) / 1000), 'seconds');
         return this.tokenCache.token;
@@ -91,49 +109,40 @@ export class ConnexService {
         throw new Error('[Connex] Missing client credentials');
       }
 
-      const tokenUrl = "https://apigateway-hippovehicle-cxm.cnx1.cloud/oauth2/token";
+      const tokenUrl = `${this.AUTH_URL}/oauth2/token`;
       const formData = new URLSearchParams();
       formData.append('grant_type', 'client_credentials');
       formData.append('client_id', clientId);
       formData.append('client_secret', clientSecret);
 
-      // Use a shorter timeout for token requests
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout for token requests
+      const response = await fetch(tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Accept": "application/json",
+        },
+        body: formData,
+      });
 
-      try {
-        const response = await fetch(tokenUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Accept": "application/json",
-          },
-          body: formData,
-          signal: controller.signal
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Failed to fetch access token: ${response.status} ${response.statusText} - ${errorText}`);
-        }
-
-        const data = await response.json();
-        
-        if (!data.access_token || !data.expires_in) {
-          throw new Error(`[Connex] Invalid token response: ${JSON.stringify(data)}`);
-        }
-
-        this.tokenCache = {
-          token: data.access_token,
-          expiresAt: Date.now() + (data.expires_in * 1000),
-        };
-
-        console.log('[Connex] Successfully retrieved new access token');
-        return data.access_token;
-      } finally {
-        clearTimeout(timeoutId);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch access token: ${response.status} ${response.statusText} - ${errorText}`);
       }
-    });
+
+      const data = await response.json();
+      
+      if (!data.access_token || !data.expires_in) {
+        throw new Error(`[Connex] Invalid token response: ${JSON.stringify(data)}`);
+      }
+
+      this.tokenCache = {
+        token: data.access_token,
+        expiresAt: Date.now() + (data.expires_in * 1000),
+      };
+
+      console.log('[Connex] Successfully retrieved new access token');
+      return data.access_token;
+    }, 3, 1000, 1.5, this.TOKEN_TIMEOUT);
   }
 
   async getUserDisplayName(userId?: string): Promise<string | undefined> {
@@ -147,7 +156,7 @@ export class ConnexService {
 
     try {
       const accessToken = await this.getAccessToken();
-      const url = `https://hippovehicle-cxm-api.cnx1.cloud/user/${userId}`;
+      const url = `${this.BASE_URL}/user/${userId}`;
       
       const response = await this.fetchWithTimeout(url, {
         method: "GET",
@@ -214,68 +223,52 @@ export class ConnexService {
       const accessToken = await this.getAccessToken();
       
       // Try searching by phone number directly first
-      const searchByPhoneUrl = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[phone]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
+      const searchByPhoneUrl = `${this.BASE_URL}/interaction?filter[phone]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 second timeout for interaction requests
+      const response = await fetch(searchByPhoneUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
+          "Accept": "application/json",
+        },
+      });
 
-      try {
-        const response = await fetch(searchByPhoneUrl, {
+      // If phone search fails, try subject search as fallback
+      if (!response.ok && response.status !== 404) {
+        console.log('[Connex] Phone search failed, trying subject search');
+        const searchBySubjectUrl = `${this.BASE_URL}/interaction?filter[subject]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
+        
+        const subjectResponse = await fetch(searchBySubjectUrl, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${accessToken}`,
             "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
             "Accept": "application/json",
           },
-          signal: controller.signal
         });
 
-        // If phone search fails, try subject search as fallback
-        if (!response.ok && response.status !== 404) {
-          console.log('[Connex] Phone search failed, trying subject search');
-          const searchBySubjectUrl = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
-          
-          clearTimeout(timeoutId);
-          const subjectTimeoutId = setTimeout(() => controller.abort(), 4000);
-          
-          try {
-            const subjectResponse = await fetch(searchBySubjectUrl, {
-              method: "GET",
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
-                "Accept": "application/json",
-              },
-              signal: controller.signal
-            });
-
-            if (!subjectResponse.ok) {
-              if (subjectResponse.status !== 404) {
-                console.error('[Connex] Subject search failed:', subjectResponse.status, subjectResponse.statusText);
-              }
-              return [];
-            }
-
-            const data: ConnexResponse = await subjectResponse.json();
-            return data.data || [];
-          } finally {
-            clearTimeout(subjectTimeoutId);
-          }
-        }
-
-        if (!response.ok) {
-          if (response.status !== 404) {
-            console.error('[Connex] Phone search failed:', response.status, response.statusText);
+        if (!subjectResponse.ok) {
+          if (subjectResponse.status !== 404) {
+            console.error('[Connex] Subject search failed:', subjectResponse.status, subjectResponse.statusText);
           }
           return [];
         }
 
-        const data: ConnexResponse = await response.json();
+        const data: ConnexResponse = await subjectResponse.json();
         return data.data || [];
-      } finally {
-        clearTimeout(timeoutId);
       }
-    }, 2, 500); // 2 retries with 500ms initial delay
+
+      if (!response.ok) {
+        if (response.status !== 404) {
+          console.error('[Connex] Phone search failed:', response.status, response.statusText);
+        }
+        return [];
+      }
+
+      const data: ConnexResponse = await response.json();
+      return data.data || [];
+    }, 3, 1000, 1.5, this.INTERACTION_TIMEOUT);
   }
 
   async getInteractionsForPhoneNumber(phoneNumber: string): Promise<ConnexInteraction[]> {
@@ -333,7 +326,7 @@ export class ConnexService {
     console.log(`[Connex] Fetching interactions for customer ID: ${customerId}`);
     try {
       const accessToken = await this.getAccessToken();
-      const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[customer_id=${customerId}]`;
+      const url = `${this.BASE_URL}/interaction?filter[customer_id=${customerId}]`;
       console.log('[Connex] Making request to:', url);
 
       const response = await this.fetchWithTimeout(url, {

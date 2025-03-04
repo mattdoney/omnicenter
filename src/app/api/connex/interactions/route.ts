@@ -20,11 +20,14 @@ interface CallInteraction extends BaseInteraction {
 
 type FormattedInteraction = BaseInteraction | CallInteraction;
 
-export const maxDuration = 15; // Increase max duration to 15 seconds to allow for retries
+export const maxDuration = 30; // Increase max duration to 30 seconds for production
 
-export const runtime = 'edge'; // Enable edge runtime for better performance
+// Use nodejs runtime instead of edge for better stability with external APIs
+export const runtime = 'nodejs';
 
 export async function GET(request: Request) {
+  const startTime = Date.now();
+  
   try {
     const { searchParams } = new URL(request.url);
     const phoneNumber = searchParams.get('phoneNumber');
@@ -43,6 +46,11 @@ export async function GET(request: Request) {
     const formattedInteractions = await Promise.race<FormattedInteraction[]>([
       Promise.all(
         interactions.map(async (interaction) => {
+          // Check if we're approaching the timeout
+          if (Date.now() - startTime > 25000) { // Leave 5s buffer
+            throw new Error('Processing time limit approaching');
+          }
+
           const type = interaction.type_name === 'voice' ? 'call' : 
                       interaction.type_name === 'sms' ? 'sms' : 'email';
           
@@ -56,37 +64,41 @@ export async function GET(request: Request) {
             status: interaction.status_name,
           };
 
-          // Only fetch additional data for calls
-          if (type === 'call' && interaction.user_id) {
+          // Only fetch additional data for calls if we have time
+          if (type === 'call' && interaction.user_id && (Date.now() - startTime < 20000)) {
             const duration = interaction.end_time 
               ? Math.round((new Date(interaction.end_time).getTime() - new Date(interaction.start_time).getTime()) / 1000)
               : 0;
 
-            // Don't wait for user display name if it takes too long
-            const userDisplayName = await Promise.race([
-              connexService.getUserDisplayName(interaction.user_id),
-              new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 2000))
-            ]);
-
-            return {
-              ...baseMessage,
-              type: 'call' as const,
-              phoneNumber: '',
-              duration,
-              userDisplayName,
-            };
+            try {
+              const userDisplayName = await connexService.getUserDisplayName(interaction.user_id);
+              return {
+                ...baseMessage,
+                type: 'call' as const,
+                phoneNumber: '',
+                duration,
+                userDisplayName,
+              };
+            } catch (error) {
+              console.error('[Connex] Error fetching user display name:', error);
+              return {
+                ...baseMessage,
+                type: 'call' as const,
+                phoneNumber: '',
+                duration,
+              };
+            }
           }
 
           return baseMessage;
         })
       ),
-      // Add a timeout for the entire operation
-      new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Processing timeout')), 7000)
+      new Promise<FormattedInteraction[]>((_, reject) => 
+        setTimeout(() => reject(new Error('Processing timeout')), 28000)
       )
     ]).catch(error => {
       console.error('[Connex] Error processing interactions:', error);
-      // Return partial results if we have them
+      // Return basic formatted interactions without additional data
       return interactions.map(interaction => ({
         id: `connex_${interaction.id}`,
         timestamp: new Date(interaction.start_time),
@@ -102,11 +114,15 @@ export async function GET(request: Request) {
     return NextResponse.json({
       interactions: formattedInteractions,
       total: formattedInteractions.length,
+      processingTime: Date.now() - startTime,
     });
   } catch (error) {
     console.error('[Connex] Error in GET handler:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch interactions' },
+      { 
+        error: 'Failed to fetch interactions',
+        processingTime: Date.now() - startTime,
+      },
       { status: 500 }
     );
   }
