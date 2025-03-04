@@ -4,6 +4,18 @@ import { ConnexService } from '@/lib/api/services/connexone';
 export const runtime = 'nodejs';
 export async function GET(request) {
     const startTime = Date.now();
+    // Handle CORS preflight
+    if (request.method === 'OPTIONS') {
+        return new NextResponse(null, {
+            status: 204,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+                'Access-Control-Max-Age': '86400',
+            },
+        });
+    }
     try {
         const { searchParams } = new URL(request.url);
         const phoneNumber = searchParams.get('phoneNumber');
@@ -12,6 +24,12 @@ export async function GET(request) {
                 interactions: [],
                 total: 0,
                 processingTime: Date.now() - startTime,
+            }, {
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                    'Cache-Control': 'no-store, must-revalidate',
+                },
             });
         }
         console.log(`[Connex API] Starting request for phone number ${phoneNumber}`);
@@ -63,6 +81,12 @@ export async function GET(request) {
                 interactions: formattedInteractions,
                 total: formattedInteractions.length,
                 processingTime,
+            }, {
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                    'Cache-Control': 'no-store, must-revalidate',
+                },
             });
         }
         catch (error) {
@@ -70,7 +94,14 @@ export async function GET(request) {
             return NextResponse.json({
                 error: 'Request timeout or error',
                 processingTime: Date.now() - startTime,
-            }, { status: 504 });
+            }, {
+                status: 504,
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                    'Cache-Control': 'no-store, must-revalidate',
+                },
+            });
         }
     }
     catch (error) {
@@ -78,7 +109,14 @@ export async function GET(request) {
         return NextResponse.json({
             error: 'Failed to fetch interactions',
             processingTime: Date.now() - startTime,
-        }, { status: 500 });
+        }, {
+            status: 500,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                'Cache-Control': 'no-store, must-revalidate',
+            },
+        });
     }
 }
 //# sourceMappingURL=route.js.map

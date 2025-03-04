@@ -1,25 +1,8 @@
 import { NextResponse } from 'next/server';
 import { ConnexService } from '@/lib/api/services/connexone';
 import { ConnexInteraction } from '@/types/connex';
-
-interface BaseInteraction {
-  id: string;
-  timestamp: Date;
-  platform: 'connex';
-  type: 'call' | 'sms' | 'email';
-  direction: 'inbound' | 'outbound';
-  body: string;
-  status: string;
-}
-
-interface CallInteraction extends BaseInteraction {
-  type: 'call';
-  phoneNumber: string;
-  duration: number;
-  userDisplayName?: string;
-}
-
-type FormattedInteraction = BaseInteraction | CallInteraction;
+import { FormattedInteraction, BaseInteraction } from '@/types/interactions';
+import { headers } from 'next/headers';
 
 // Force Node.js runtime for better API compatibility
 export const runtime = 'nodejs';
@@ -27,6 +10,19 @@ export const runtime = 'nodejs';
 export async function GET(request: Request) {
   const startTime = Date.now();
   
+  // Handle CORS preflight
+  if (request.method === 'OPTIONS') {
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Max-Age': '86400',
+      },
+    });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const phoneNumber = searchParams.get('phoneNumber');
@@ -36,6 +32,12 @@ export async function GET(request: Request) {
         interactions: [],
         total: 0,
         processingTime: Date.now() - startTime,
+      }, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Cache-Control': 'no-store, must-revalidate',
+        },
       });
     }
 
@@ -97,6 +99,12 @@ export async function GET(request: Request) {
         interactions: formattedInteractions,
         total: formattedInteractions.length,
         processingTime,
+      }, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Cache-Control': 'no-store, must-revalidate',
+        },
       });
     } catch (error) {
       console.error('[Connex API] Error processing interactions:', error);
@@ -105,7 +113,14 @@ export async function GET(request: Request) {
           error: 'Request timeout or error',
           processingTime: Date.now() - startTime,
         },
-        { status: 504 }
+        { 
+          status: 504,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Cache-Control': 'no-store, must-revalidate',
+          },
+        }
       );
     }
   } catch (error) {
@@ -115,7 +130,14 @@ export async function GET(request: Request) {
         error: 'Failed to fetch interactions',
         processingTime: Date.now() - startTime,
       },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Cache-Control': 'no-store, must-revalidate',
+        },
+      }
     );
   }
 }
