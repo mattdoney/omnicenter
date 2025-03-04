@@ -1,6 +1,25 @@
 import { NextResponse } from 'next/server';
 import { ConnexService } from '@/lib/api/services/connexone';
 
+interface BaseInteraction {
+  id: string;
+  timestamp: Date;
+  platform: 'connex';
+  type: 'call' | 'sms' | 'email';
+  direction: string;
+  body: string;
+  status: string;
+}
+
+interface CallInteraction extends BaseInteraction {
+  type: 'call';
+  phoneNumber: string;
+  duration: number;
+  userDisplayName?: string;
+}
+
+type FormattedInteraction = BaseInteraction | CallInteraction;
+
 export const maxDuration = 8; // Set max duration to 8 seconds
 
 export async function GET(request: Request) {
@@ -19,13 +38,13 @@ export async function GET(request: Request) {
     const interactions = await connexService.getInteractions(phoneNumber);
     
     // Process interactions in parallel with a timeout
-    const formattedInteractions = await Promise.race([
+    const formattedInteractions = await Promise.race<FormattedInteraction[]>([
       Promise.all(
         interactions.map(async (interaction) => {
           const type = interaction.type_name === 'voice' ? 'call' : 
                       interaction.type_name === 'sms' ? 'sms' : 'email';
           
-          const baseMessage = {
+          const baseMessage: BaseInteraction = {
             id: `connex_${interaction.id}`,
             timestamp: new Date(interaction.start_time),
             platform: 'connex',
@@ -60,7 +79,7 @@ export async function GET(request: Request) {
         })
       ),
       // Add a timeout for the entire operation
-      new Promise((_, reject) => 
+      new Promise<never>((_, reject) => 
         setTimeout(() => reject(new Error('Processing timeout')), 7000)
       )
     ]).catch(error => {
@@ -69,9 +88,9 @@ export async function GET(request: Request) {
       return interactions.map(interaction => ({
         id: `connex_${interaction.id}`,
         timestamp: new Date(interaction.start_time),
-        platform: 'connex',
-        type: interaction.type_name === 'voice' ? 'call' : 
-              interaction.type_name === 'sms' ? 'sms' : 'email',
+        platform: 'connex' as const,
+        type: interaction.type_name === 'voice' ? 'call' as const : 
+              interaction.type_name === 'sms' ? 'sms' as const : 'email' as const,
         direction: interaction.direction === 'none' ? 'outbound' : interaction.direction,
         body: interaction.subject || `${interaction.type_name.toUpperCase()} Interaction`,
         status: interaction.status_name,
