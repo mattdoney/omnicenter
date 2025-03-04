@@ -214,60 +214,96 @@ export class ConnexService {
     return '+44' + cleaned;
   }
 
+  private async makeRequest(url: string, options: RequestInit, timeout: number): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      console.log(`[Connex] Making request to ${url} with ${timeout}ms timeout`);
+      const startTime = Date.now();
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      console.log(`[Connex] Request completed in ${Date.now() - startTime}ms with status ${response.status}`);
+      return response;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   async getInteractions(phoneNumber: string): Promise<ConnexInteraction[]> {
     return this.retryWithBackoff(async () => {
       const formattedNumber = this.formatPhoneNumber(phoneNumber);
       console.log(`[Connex] Formatted phone number from ${phoneNumber} to ${formattedNumber}`);
 
       const accessToken = await this.getAccessToken();
+      console.log('[Connex] Successfully retrieved access token, making API request');
       
       // Try searching by phone number directly first
       const searchByPhoneUrl = `${this.BASE_URL}/interaction?filter[phone]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
       
-      const response = await fetch(searchByPhoneUrl, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
-          "Accept": "application/json",
-        },
-      });
-
-      // If phone search fails, try subject search as fallback
-      if (!response.ok && response.status !== 404) {
-        console.log('[Connex] Phone search failed, trying subject search');
-        const searchBySubjectUrl = `${this.BASE_URL}/interaction?filter[subject]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
-        
-        const subjectResponse = await fetch(searchBySubjectUrl, {
+      try {
+        const response = await this.makeRequest(searchByPhoneUrl, {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
+            "Authorization": `Bearer ${accessToken}`,
+            "X-Authorization": "Basic MjA2MzpNYW5jaGVzdGVyMSM=",
             "Accept": "application/json",
-          },
-        });
+            "Connection": "keep-alive",
+            "Cache-Control": "no-cache"
+          }
+        }, this.INTERACTION_TIMEOUT);
 
-        if (!subjectResponse.ok) {
-          if (subjectResponse.status !== 404) {
-            console.error('[Connex] Subject search failed:', subjectResponse.status, subjectResponse.statusText);
+        // If phone search fails, try subject search as fallback
+        if (!response.ok && response.status !== 404) {
+          console.log('[Connex] Phone search failed with status', response.status, 'trying subject search');
+          const searchBySubjectUrl = `${this.BASE_URL}/interaction?filter[subject]=${encodeURIComponent(formattedNumber)}&limit=10&sort=-start_time`;
+          
+          const subjectResponse = await this.makeRequest(searchBySubjectUrl, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "X-Authorization": "Basic MjA2MzpNYW5jaGVzdGVyMSM=",
+              "Accept": "application/json",
+              "Connection": "keep-alive",
+              "Cache-Control": "no-cache"
+            }
+          }, this.INTERACTION_TIMEOUT);
+
+          if (!subjectResponse.ok) {
+            if (subjectResponse.status !== 404) {
+              const errorText = await subjectResponse.text();
+              console.error('[Connex] Subject search failed:', subjectResponse.status, errorText);
+            }
+            return [];
+          }
+
+          const data: ConnexResponse = await subjectResponse.json();
+          console.log(`[Connex] Subject search successful, found ${data.data?.length || 0} interactions`);
+          return data.data || [];
+        }
+
+        if (!response.ok) {
+          if (response.status !== 404) {
+            const errorText = await response.text();
+            console.error('[Connex] Phone search failed:', response.status, errorText);
           }
           return [];
         }
 
-        const data: ConnexResponse = await subjectResponse.json();
+        const data: ConnexResponse = await response.json();
+        console.log(`[Connex] Phone search successful, found ${data.data?.length || 0} interactions`);
         return data.data || [];
-      }
-
-      if (!response.ok) {
-        if (response.status !== 404) {
-          console.error('[Connex] Phone search failed:', response.status, response.statusText);
+      } catch (error) {
+        if (error instanceof Error) {
+          console.error(`[Connex] Request failed: ${error.name} - ${error.message}`);
+          // Rethrow to trigger retry
+          throw error;
         }
         return [];
       }
-
-      const data: ConnexResponse = await response.json();
-      return data.data || [];
-    }, 3, 1000, 1.5, this.INTERACTION_TIMEOUT);
+    }, 3, 1000, 1.5, this.INTERACTION_TIMEOUT * 2); // Double timeout for the entire operation
   }
 
   async getInteractionsForPhoneNumber(phoneNumber: string): Promise<ConnexInteraction[]> {
