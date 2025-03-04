@@ -2,7 +2,12 @@
   "regions": ["lhr1"],
   "functions": {
     "app/api/connex/interactions/route.ts": {
-      "maxDuration": 30
+      "maxDuration": 60
+    }
+  },
+  "build": {
+    "env": {
+      "VERCEL_REGION": "lhr1"
     }
   }
 }
