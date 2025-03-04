@@ -142,15 +142,32 @@ export class ConnexService {
       const url = `https://hippovehicle-cxm-api.cnx1.cloud/interaction?filter[subject]=${encodedNumber}`;
       console.log('[Connex] Making request to:', url);
 
+      // Create custom agent for better connection handling
+      const agent = new (await import('https')).Agent({
+        keepAlive: true,
+        keepAliveMsecs: 1000,
+        maxSockets: 10,
+        timeout: 10000
+      });
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
       const response = await fetch(url, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "X-Authorization": `Basic MjA2MzpNYW5jaGVzdGVyMSM=`,
           "Accept": "application/json",
+          "Connection": "keep-alive"
         },
-        signal: AbortSignal.timeout(5000)
+        signal: controller.signal,
+        // @ts-ignore - Node fetch specific option
+        agent,
+        cache: 'no-store'
       });
+
+      clearTimeout(timeoutId);
 
       console.log('[Connex] Interactions response status:', response.status, response.statusText);
       
@@ -183,7 +200,7 @@ export class ConnexService {
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'TimeoutError') {
-        console.error('[Connex] Request timed out after 5 seconds');
+        console.error('[Connex] Request timed out after 10 seconds');
         return [];
       }
       console.error(`[Connex] Error fetching interactions for phone number ${phoneNumber}:`, error);
