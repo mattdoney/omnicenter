@@ -1,12 +1,20 @@
 'use client';
 
-import { useCallback, useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo, Suspense } from 'react';
 import { UnifiedMessage } from '@/types/messages';
 import Timeline from '@/components/Timeline/Timeline';
 import { APIClient } from '@/lib/api/client';
 import { useSearchParams } from 'next/navigation';
 
-export default function Home() {
+export default function Widget() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <WidgetContent />
+    </Suspense>
+  );
+}
+
+function WidgetContent() {
   const [identifier, setIdentifier] = useState('');
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [loading, setLoading] = useState(false);

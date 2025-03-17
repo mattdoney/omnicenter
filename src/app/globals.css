@@ -5,7 +5,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&display=swap');
 
 :root {
-  --background: #000;
+  /* --background: #000; */
   --foreground: #ffffff;
 }
 
@@ -18,6 +18,6 @@
 
 body {
   color: var(--foreground);
-  background: var(--background);
+  /* background: var(--background); */
   font-family: Nunito, Arial, Helvetica, sans-serif;
 }
