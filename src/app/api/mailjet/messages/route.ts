@@ -25,6 +25,19 @@ interface MailjetMessageDetails {
   UUID: string;
 }
 
+interface UnifiedMessage {
+  id: string;
+  timestamp: Date;
+  platform: string;
+  type: 'email';
+  direction: 'inbound' | 'outbound';
+  body: string;
+  subject: string;
+  emailAddress: string;
+  status: string;
+  isOpened: boolean;
+}
+
 async function getContactId(emailAddress: string, auth: string): Promise<number | null> {
   console.log(`[Mailjet] Looking up contact ID for email: ${emailAddress}`);
   try {
@@ -166,7 +179,7 @@ export async function GET(request: Request) {
     const auth = Buffer.from(`${config.MAILJET_API_KEY}:${config.MAILJET_API_SECRET}`).toString('base64');
 
     // Create an array to hold all messages
-    let allMessages: any[] = [];
+    let allMessages: UnifiedMessage[] = [];
 
     // For each email address, fetch messages
     for (const emailAddress of emailAddresses) {
@@ -191,7 +204,7 @@ export async function GET(request: Request) {
         // Determine direction based on the searched email
         // If the searched email is the ToEmail, it's inbound
         // If the searched email is the FromEmail or if we can't determine, assume outbound
-        const direction = msg.ToEmail?.toLowerCase() === emailAddress.toLowerCase() ? 'inbound' : 'outbound';
+        const direction = msg.ToEmail?.toLowerCase() === emailAddress.toLowerCase() ? 'inbound' as const : 'outbound' as const;
         
         return {
           id: msg.UUID,

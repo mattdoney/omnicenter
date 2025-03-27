@@ -35,7 +35,7 @@ export async function GET(request: Request) {
       if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
         throw new Error('Invalid phone numbers format');
       }
-    } catch (e) {
+    } catch (_) {
       return NextResponse.json(
         { error: 'Invalid phone numbers format' },
         { status: 400 }
@@ -50,7 +50,17 @@ export async function GET(request: Request) {
     const formattedPhones = phoneNumbers.map(formatPhoneNumber);
     
     // Create an array to hold all messages
-    let allMessages: any[] = [];
+    interface TwilioMessageType {
+      sid: string;
+      dateCreated: Date;
+      direction: string;
+      body: string;
+      from: string;
+      to: string;
+      status: string;
+    }
+    
+    let allMessages: TwilioMessageType[] = [];
 
     // For each phone number, fetch messages from both accounts
     for (const formattedPhone of formattedPhones) {
