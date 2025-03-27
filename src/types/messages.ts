@@ -51,11 +51,21 @@ export interface CallMessage extends UnifiedMessage {
   body: string;
 }
 
+export interface ExternalIdentifier {
+  id: string;
+  type: string;
+  source_id?: string;
+  collection?: string;
+  created_at?: string;
+  encoding?: string;
+  first_message_id?: string;
+}
+
 export interface MessageQueryParams {
   phoneNumber?: string;
   emailAddress?: string;
   customerIds?: string[];
-  associatedIdentifiers?: string[];
+  associatedIdentifiers?: ExternalIdentifier[];
   startDate?: Date;
   endDate?: Date;
   page?: number;

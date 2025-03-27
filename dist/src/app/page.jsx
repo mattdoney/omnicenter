@@ -39,7 +39,7 @@ function HomeContent() {
             const result = await apiClient.getMessages({
                 emailAddress: searchIdentifier.includes('@') ? searchIdentifier : undefined,
                 phoneNumber: searchIdentifier.includes('@') ? undefined : searchIdentifier,
-                associatedIdentifiers: segmentData.identifiers || [],
+                associatedIdentifiers: segmentData.data || [],
             });
             console.log('Messages loaded:', result.messages.length);
             setMessages(result.messages);

@@ -65,15 +65,15 @@ export default function Timeline({ messages = [], loading = false }: TimelinePro
     const getColor = (type: string, direction: string) => {
       switch (type) {
         case 'sms':
-          return direction === 'outbound' ? '#9c27b0' : '#f5f5f5';
+          return direction === 'outbound' ? '#9c27b0' : '#e0e0e0'; 
         case 'email':
-          return direction === 'outbound' ? '#1976d2' : '#e3f2fd';
+          return direction === 'outbound' ? '#1976d2' : '#c8e1fb'; 
         case 'call':
-          return direction === 'outbound' ? '#2e7d32' : '#e8f5e9';
+          return direction === 'outbound' ? '#2e7d32' : '#c8e6c9'; 
         case 'whatsapp':
-          return direction === 'outbound' ? '#2e7d32' : '#e8f5e9';
+          return direction === 'outbound' ? '#2e7d32' : '#c8e6c9'; 
         default:
-          return direction === 'outbound' ? '#9c27b0' : '#f5f5f5';
+          return direction === 'outbound' ? '#9c27b0' : '#e0e0e0'; 
       }
     };
 

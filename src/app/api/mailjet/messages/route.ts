@@ -135,12 +135,27 @@ export async function GET(request: Request) {
   console.log('[Mailjet] Starting GET request for messages');
   try {
     const { searchParams } = new URL(request.url);
-    const emailAddress = searchParams.get('emailAddress');
+    const emailAddressesParam = searchParams.get('emailAddresses');
 
-    if (!emailAddress) {
-      console.log('[Mailjet] No email address provided');
+    if (!emailAddressesParam) {
+      console.log('[Mailjet] No email addresses provided');
       return NextResponse.json(
-        { error: 'Email address is required' },
+        { error: 'Email addresses are required' },
+        { status: 400 }
+      );
+    }
+
+    // Parse the JSON array of email addresses
+    let emailAddresses: string[];
+    try {
+      emailAddresses = JSON.parse(emailAddressesParam);
+      if (!Array.isArray(emailAddresses) || emailAddresses.length === 0) {
+        throw new Error('Invalid email addresses format');
+      }
+    } catch (e) {
+      console.log('[Mailjet] Invalid email addresses format:', e);
+      return NextResponse.json(
+        { error: 'Invalid email addresses format' },
         { status: 400 }
       );
     }
@@ -150,50 +165,64 @@ export async function GET(request: Request) {
     console.log('[Mailjet] Secret key length:', config.MAILJET_API_SECRET?.length);
     const auth = Buffer.from(`${config.MAILJET_API_KEY}:${config.MAILJET_API_SECRET}`).toString('base64');
 
-    // First get the contact ID
-    const contactId = await getContactId(emailAddress, auth);
-    if (!contactId) {
-      console.log('[Mailjet] No contact ID found, returning empty result');
-      return NextResponse.json({
-        messages: [],
-        total: 0,
+    // Create an array to hold all messages
+    let allMessages: any[] = [];
+
+    // For each email address, fetch messages
+    for (const emailAddress of emailAddresses) {
+      // First get the contact ID
+      const contactId = await getContactId(emailAddress, auth);
+      if (!contactId) {
+        console.log(`[Mailjet] No contact ID found for ${emailAddress}, skipping`);
+        continue;
+      }
+
+      // Then get messages for this contact
+      const mailjetMessages = await getMessages(contactId, auth);
+      
+      // Format messages
+      const formattedMessages = mailjetMessages.map(msg => {
+        console.log('[Mailjet] Processing message:', {
+          FromEmail: msg.FromEmail,
+          ToEmail: msg.ToEmail,
+          searchedEmail: emailAddress
+        });
+
+        // Determine direction based on the searched email
+        // If the searched email is the ToEmail, it's inbound
+        // If the searched email is the FromEmail or if we can't determine, assume outbound
+        const direction = msg.ToEmail?.toLowerCase() === emailAddress.toLowerCase() ? 'inbound' : 'outbound';
+        
+        return {
+          id: msg.UUID,
+          timestamp: new Date(msg.ArrivedAt),
+          platform: 'mailjet',
+          type: 'email' as const,
+          direction,
+          body: msg.Subject || 'No subject',
+          subject: msg.Subject,
+          emailAddress,
+          status: msg.Status?.toLowerCase(),
+          isOpened: msg.IsOpenTracked,
+        };
       });
+
+      // Add to all messages
+      allMessages = [...allMessages, ...formattedMessages];
     }
 
-    // Then get messages for this contact
-    const mailjetMessages = await getMessages(contactId, auth);
-    
-    // Format messages
-    const formattedMessages = mailjetMessages.map(msg => {
-      console.log('[Mailjet] Processing message:', {
-        FromEmail: msg.FromEmail,
-        ToEmail: msg.ToEmail,
-        searchedEmail: emailAddress
-      });
+    // Sort all messages by date
+    allMessages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-      // Determine direction based on the searched email
-      // If the searched email is the ToEmail, it's inbound
-      // If the searched email is the FromEmail or if we can't determine, assume outbound
-      const direction = msg.ToEmail?.toLowerCase() === emailAddress.toLowerCase() ? 'inbound' : 'outbound';
-      
-      return {
-        id: msg.UUID,
-        timestamp: new Date(msg.ArrivedAt),
-        platform: 'mailjet',
-        type: 'email' as const,
-        direction,
-        body: msg.Subject || 'No subject',
-        subject: msg.Subject,
-        emailAddress,
-        status: msg.Status?.toLowerCase(),
-        isOpened: msg.IsOpenTracked,
-      };
-    });
+    // Remove duplicates based on ID
+    const uniqueMessages = Array.from(
+      new Map(allMessages.map(msg => [msg.id, msg])).values()
+    );
 
-    console.log(`[Mailjet] Returning ${formattedMessages.length} formatted messages`);
+    console.log(`[Mailjet] Returning ${uniqueMessages.length} formatted messages`);
     return NextResponse.json({
-      messages: formattedMessages,
-      total: formattedMessages.length,
+      messages: uniqueMessages,
+      total: uniqueMessages.length,
     });
   } catch (error) {
     console.error('[Mailjet] Error in GET handler:', error);
@@ -205,72 +234,68 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  console.log('[Mailjet] Starting POST request to send email');
   try {
     const { to, subject, text } = await request.json();
 
-    if (!to || !text) {
-      console.log('[Mailjet] Missing required fields');
+    if (!to || !subject || !text) {
       return NextResponse.json(
-        { error: 'Email address and message are required' },
+        { error: 'To, subject, and text are required' },
         { status: 400 }
       );
     }
 
     const config = getEnvConfig();
-    console.log('[Mailjet] Config loaded, API key length:', config.MAILJET_API_KEY?.length);
-    console.log('[Mailjet] Secret key length:', config.MAILJET_API_SECRET?.length);
+    const url = 'https://api.mailjet.com/v3.1/send';
     const auth = Buffer.from(`${config.MAILJET_API_KEY}:${config.MAILJET_API_SECRET}`).toString('base64');
 
-    const response = await fetch('https://api.mailjet.com/v3.1/send', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        Messages: [
-          {
-            From: {
-              Email: config.MAILJET_SENDER_EMAIL,
-            },
-            To: [
-              {
-                Email: to,
-              },
-            ],
-            Subject: subject || 'New Message',
-            TextPart: text,
-            TrackOpens: 'enabled',
+    const payload = {
+      Messages: [
+        {
+          From: {
+            Email: config.MAILJET_SENDER_EMAIL,
+            Name: "Omnicenter",
           },
-        ],
-      }),
-    });
-
-    console.log(`[Mailjet] Send email response status: ${response.status} ${response.statusText}`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Mailjet] Error response body:`, errorText);
-      throw new Error(`Failed to send email: ${response.statusText}`);
-    }
-
-    const sentMessage = {
-      id: Date.now().toString(),
-      timestamp: new Date(),
-      platform: 'mailjet' as const,
-      type: 'email' as const,
-      direction: 'outbound' as const,
-      body: text,
-      emailAddress: to,
-      isOpened: false,
-      status: 'sent',
+          To: [
+            {
+              Email: to,
+            },
+          ],
+          Subject: subject,
+          TextPart: text,
+        },
+      ],
     };
 
-    console.log('[Mailjet] Returning sent message');
-    return NextResponse.json(sentMessage);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${auth}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errorData.error || 'Failed to send email');
+    }
+
+    const data = await response.json();
+    const messageId = data.Messages?.[0]?.To?.[0]?.MessageID || 'unknown';
+
+    return NextResponse.json({
+      id: messageId,
+      timestamp: new Date(),
+      platform: 'mailjet',
+      type: 'email',
+      direction: 'outbound',
+      body: text,
+      subject,
+      emailAddress: to,
+      status: 'sent',
+    });
   } catch (error) {
-    console.error('[Mailjet] Error in POST handler:', error);
+    console.error('Error sending Mailjet message:', error);
     return NextResponse.json(
       { error: 'Failed to send message' },
       { status: 500 }

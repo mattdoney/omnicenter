@@ -14,15 +14,27 @@ export class TwilioService {
   }
 
   async getMessages(params: MessageQueryParams): Promise<UnifiedMessage[]> {
-    if (!params.phoneNumber) {
-      return [];
-    }
-
     try {
+      // Extract phone numbers from associated identifiers
+      const phoneIdentifiers = params.associatedIdentifiers
+        ?.filter(id => id.type === 'phone')
+        .map(id => id.id) || [];
+      
+      // Add the direct phone number if it exists
+      if (params.phoneNumber && !phoneIdentifiers.includes(params.phoneNumber)) {
+        phoneIdentifiers.push(params.phoneNumber);
+      }
+      
+      // If no phone numbers found, return empty array
+      if (phoneIdentifiers.length === 0) {
+        return [];
+      }
+
+      // Make API call with all phone numbers
       const response = await fetch(
         `${this.baseUrl}/messages?` +
         new URLSearchParams({
-          phoneNumber: params.phoneNumber
+          phoneNumbers: JSON.stringify(phoneIdentifiers)
         })
       );
 

@@ -14,15 +14,27 @@ export class MailjetService {
   }
 
   async getMessages(params: MessageQueryParams): Promise<UnifiedMessage[]> {
-    if (!params.emailAddress) {
-      return [];
-    }
-
     try {
+      // Extract email addresses from associated identifiers
+      const emailIdentifiers = params.associatedIdentifiers
+        ?.filter(id => id.type === 'email')
+        .map(id => id.id) || [];
+      
+      // Add the direct email address if it exists
+      if (params.emailAddress && !emailIdentifiers.includes(params.emailAddress)) {
+        emailIdentifiers.push(params.emailAddress);
+      }
+      
+      // If no email addresses found, return empty array
+      if (emailIdentifiers.length === 0) {
+        return [];
+      }
+
+      // Make API call with all email addresses
       const response = await fetch(
         `${this.baseUrl}/messages?` +
         new URLSearchParams({
-          emailAddress: params.emailAddress
+          emailAddresses: JSON.stringify(emailIdentifiers)
         })
       );
 

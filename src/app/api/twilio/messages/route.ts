@@ -19,11 +19,25 @@ const formatPhoneNumber = (phoneNumber: string): string => {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const phoneNumber = searchParams.get('phoneNumber');
+    const phoneNumbersParam = searchParams.get('phoneNumbers');
 
-    if (!phoneNumber) {
+    if (!phoneNumbersParam) {
       return NextResponse.json(
-        { error: 'Phone number is required' },
+        { error: 'Phone numbers are required' },
+        { status: 400 }
+      );
+    }
+
+    // Parse the JSON array of phone numbers
+    let phoneNumbers: string[];
+    try {
+      phoneNumbers = JSON.parse(phoneNumbersParam);
+      if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
+        throw new Error('Invalid phone numbers format');
+      }
+    } catch (e) {
+      return NextResponse.json(
+        { error: 'Invalid phone numbers format' },
         { status: 400 }
       );
     }
@@ -31,29 +45,49 @@ export async function GET(request: Request) {
     const config = getEnvConfig();
     const mainClient = twilio(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN);
     const subClient = twilio(config.TWILIO_SUB_ACCOUNT_SID, config.TWILIO_SUB_AUTH_TOKEN);
-    const formattedPhone = formatPhoneNumber(phoneNumber);
+    
+    // Format all phone numbers
+    const formattedPhones = phoneNumbers.map(formatPhoneNumber);
+    
+    // Create an array to hold all messages
+    let allMessages: any[] = [];
 
-    // Get messages from both accounts
-    const [mainSentMessages, mainReceivedMessages, subSentMessages, subReceivedMessages] = await Promise.all([
-      mainClient.messages.list({
-        from: formattedPhone
-      }),
-      mainClient.messages.list({
-        to: formattedPhone
-      }),
-      subClient.messages.list({
-        from: formattedPhone
-      }),
-      subClient.messages.list({
-        to: formattedPhone
-      })
-    ]);
+    // For each phone number, fetch messages from both accounts
+    for (const formattedPhone of formattedPhones) {
+      const [mainSentMessages, mainReceivedMessages, subSentMessages, subReceivedMessages] = await Promise.all([
+        mainClient.messages.list({
+          from: formattedPhone
+        }),
+        mainClient.messages.list({
+          to: formattedPhone
+        }),
+        subClient.messages.list({
+          from: formattedPhone
+        }),
+        subClient.messages.list({
+          to: formattedPhone
+        })
+      ]);
 
-    // Combine and sort messages by date
-    const allMessages = [...mainSentMessages, ...mainReceivedMessages, ...subSentMessages, ...subReceivedMessages]
-      .sort((a, b) => b.dateCreated.getTime() - a.dateCreated.getTime());
+      // Add messages to the combined array
+      allMessages = [
+        ...allMessages,
+        ...mainSentMessages,
+        ...mainReceivedMessages,
+        ...subSentMessages,
+        ...subReceivedMessages
+      ];
+    }
 
-    const formattedMessages = allMessages.map(msg => ({
+    // Sort all messages by date
+    allMessages.sort((a, b) => b.dateCreated.getTime() - a.dateCreated.getTime());
+
+    // Remove duplicates based on SID
+    const uniqueMessages = Array.from(
+      new Map(allMessages.map(msg => [msg.sid, msg])).values()
+    );
+
+    const formattedMessages = uniqueMessages.map(msg => ({
       id: msg.sid,
       timestamp: new Date(msg.dateCreated),
       platform: 'twilio',

@@ -48,7 +48,7 @@ function HomeContent() {
       const result = await apiClient.getMessages({
         emailAddress: searchIdentifier.includes('@') ? searchIdentifier : undefined,
         phoneNumber: searchIdentifier.includes('@') ? undefined : searchIdentifier,
-        associatedIdentifiers: segmentData.identifiers || [],
+        associatedIdentifiers: segmentData.data || [],
       });
 
       console.log('Messages loaded:', result.messages.length);
@@ -77,7 +77,7 @@ function HomeContent() {
   }, [searchParams, loadMessages]);
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen bg-[#f8f9fa]">
       <div className="flex flex-col w-full max-w-3xl mx-auto p-4 space-y-4">
         <div className="flex flex-col space-y-4 sm:flex-row sm:space-x-4 sm:space-y-0">
           <input
